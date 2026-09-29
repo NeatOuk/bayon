@@ -1,0 +1,12 @@
+-- 050_model_standby: a model an adapter registers without making it its tier's active row.
+--
+--   models.standby  1: the registration lists the row on standby. Boot writes it inactive and keeps
+--             it registered, with its certificates, so an operator can switch the tier back to it
+--             (PATCH active, which makes the row the operator's). 0 for every other row, and for
+--             every existing one. Written only by the registration at boot (the supervisor), like
+--             the rest of an adapter row.
+--
+-- The operator's writer refills a tier left with no active row from its registered adapter rows; it
+-- now prefers the one that is not on standby, as the next boot would. A column CHECK naming only
+-- itself, so the down drops it with the column.
+ALTER TABLE models ADD COLUMN standby INTEGER NOT NULL DEFAULT 0 CHECK (standby IN (0, 1));

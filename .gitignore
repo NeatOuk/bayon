@@ -1,0 +1,11 @@
+.claude/settings.local.json
+node_modules/
+dist/
+coverage/
+# Never a real secret in the repo (Invariant 11) — this just stops one from landing by accident.
+.env
+.env.*
+!.env.example
+# Live runner recordings (FRM_RECORD=1): reviewed by hand before they become fixtures.
+packages/runners/fixtures/*/recorded/
+.DS_Store

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // NestJS uses legacy decorators. Every constructor parameter still names its token with
+    // @Inject(TOKEN), so nothing depends on emitted design:paramtypes (Vitest's transform too).
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["node"]
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/executors" },
+    { "path": "../../packages/proto" },
+    { "path": "../../packages/runners" }
+  ]
+}

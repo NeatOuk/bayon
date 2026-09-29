@@ -1,0 +1,16 @@
+{
+  "name": "@bayon/proto",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@bayon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@bayon/core": "workspace:*",
+    "zod": "^4.6.2"
+  }
+}

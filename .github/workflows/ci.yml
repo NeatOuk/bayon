@@ -1,0 +1,32 @@
+name: ci
+on: push
+permissions:
+  contents: read
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -w build
+      - run: pnpm -w typecheck
+      - run: pnpm -w lint
+      - run: pnpm -w test
+      - name: smoke (fixture runner, no key)
+        run: pnpm frm smoke
+        timeout-minutes: 5
+      - name: smoke --m1 (tickets, laws, MCP, markdown export)
+        run: pnpm frm smoke --m1
+        timeout-minutes: 5
+      - name: smoke --hang exits non-zero within its deadline
+        timeout-minutes: 5
+        run: |
+          set +e
+          out=$(pnpm frm smoke --hang 2>&1); code=$?
+          echo "$out"
+          test "$code" -eq 1 && grep -q 'the run ended "timeout"' <<<"$out"

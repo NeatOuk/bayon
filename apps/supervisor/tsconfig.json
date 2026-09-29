@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "references": [
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/executors"
+    },
+    {
+      "path": "../../packages/runners"
+    },
+    {
+      "path": "../../packages/proto"
+    }
+  ]
+}

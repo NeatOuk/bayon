@@ -1,0 +1,14 @@
+{"type":"fixture_meta","hand_authored":true,"source":"codex-rs/exec/src/exec_events.rs @ rust-v0.154.0 + the turn host's frames","case":"an adopted host: thread state from frm.host.start, two resumed turns, thread totals billed as deltas"}
+{"type":"frm.host.start","v":1,"runner_session_id":"rsid-1","thread_id":"0199a0b1-0000-7000-8000-000000000007","usage_total":{"input_tokens":1000,"cached_input_tokens":800,"cache_write_input_tokens":0,"output_tokens":50,"reasoning_output_tokens":10}}
+{"type":"frm.host.turn","run_id":"run-2","model":"gpt-5.6-luna","resume":true,"argv":["codex","exec","resume","--json","0199a0b1-0000-7000-8000-000000000007","-"]}
+{"type":"thread.started","thread_id":"0199a0b1-0000-7000-8000-000000000007"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":2200,"cached_input_tokens":1900,"cache_write_input_tokens":0,"output_tokens":70,"reasoning_output_tokens":12}}
+{"type":"frm.host.exit","run_id":"run-2","code":0,"signal":null}
+{"type":"frm.host.turn","run_id":"run-3","model":"gpt-5.6-luna","resume":true,"argv":["codex","exec","resume","--json","0199a0b1-0000-7000-8000-000000000007","-"]}
+{"type":"thread.started","thread_id":"0199a0b1-0000-7000-8000-000000000007"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"The word was lantern."}}
+{"type":"turn.completed","usage":{"input_tokens":3500,"cached_input_tokens":3000,"cache_write_input_tokens":0,"output_tokens":95,"reasoning_output_tokens":15}}
+{"type":"frm.host.exit","run_id":"run-3","code":0,"signal":null}

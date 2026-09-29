@@ -1,0 +1,4 @@
+#!/bin/sh
+# frm inside the Bayon image: run through
+# `deploy/bayon.sh frm <project> …`, which execs it in the supervisor container.
+exec node /opt/bayon/tools/frm/dist/main.js "$@"

@@ -1,0 +1,16 @@
+{
+  "name": "@bayon/frm",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@bayon/api": "workspace:*"
+  },
+  "dependencies": {
+    "@bayon/core": "workspace:*",
+    "@bayon/db": "workspace:*",
+    "@bayon/executors": "workspace:*",
+    "@bayon/proto": "workspace:*",
+    "@bayon/runners": "workspace:*",
+    "zod": "^4.6.2"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Node globals for tests and FakeClock; the hash helpers use Web Crypto, which browsers have too.
+    "types": ["node"]
+  }
+}

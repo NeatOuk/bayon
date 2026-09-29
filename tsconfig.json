@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["*.ts", "deploy/*.ts"],
+  "references": [
+    { "path": "apps/api" },
+    { "path": "apps/supervisor" },
+    { "path": "apps/web" },
+    { "path": "packages/core" },
+    { "path": "packages/db" },
+    { "path": "packages/executors" },
+    { "path": "packages/proto" },
+    { "path": "packages/runners" },
+    { "path": "tools/frm" }
+  ]
+}

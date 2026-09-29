@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The production edge server: Node, compiled to dist/server/ and run
+    // from there (`node dist/server/main.js`); it serves the app `vite build` writes to dist/app/.
+    "rootDir": "./server",
+    "outDir": "${configDir}/dist/server",
+    "tsBuildInfoFile": "${configDir}/dist/server/tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["server"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/executors" }
+  ]
+}

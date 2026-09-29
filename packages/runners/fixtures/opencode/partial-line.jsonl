@@ -1,0 +1,5 @@
+{"type":"fixture_meta","hand_authored":true,"source":"the turn host's relay","case":"the host died mid-write: the last line is cut off"}
+{"type":"frm.host.start","v":1,"runner_session_id":"ses_0000000000000000000000fix1","resumed":false,"model":"ollama/qwen3.8:27b"}
+{"type":"frm.host.turn","run_id":"run-1","rpc_id":3,"model":"ollama/qwen3.8:27b","output":false}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_0000000000000000000000fix1","update":{"sessionUpdate":"agent_message_chunk","messageId":"msg_fix_4","content":{"type":"text","text":"Hel"}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_0000000000000000000000fix1","upda

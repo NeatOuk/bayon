@@ -1,0 +1,198 @@
+# Bayon on the shared docker host. Every container, network and
+# volume carries frm.managed=1 and frm.deploy=<project>, and never frm.executor, so no executor reaper
+# or pruner can match them. Values come from /srv/bayon/<project>/release.env, which holds settings,
+# never secrets: BAYON_PROJECT, BAYON_TAG, BAYON_PORT, BAYON_ADDR, BAYON_NET, BAYON_DIR. Secrets are
+# read-only directories under $BAYON_DIR/secrets, mounted at /run/secrets, one per service.
+#
+# Never `docker compose up -d` a new BAYON_TAG by hand: deploy/bayon.sh upgrade pauses the fleet,
+# waits until no turn is in flight, stops the writers, backs up and migrates first (design §7.5).
+name: ${BAYON_PROJECT:?}
+
+x-labels: &labels
+  frm.managed: "1"
+  frm.deploy: ${BAYON_PROJECT:?}
+
+x-app: &app
+  image: bayon-app:${BAYON_TAG:?}
+  pull_policy: never
+  user: "10001:10001"
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  oom_score_adj: 500
+  labels: *labels
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  # The one-shot before api and supervisor: a backup of an existing DB, then the migrations.
+  migrate:
+    <<: *app
+    restart: "no"
+    hostname: migrate
+    network_mode: none
+    command: ["/opt/bayon/deploy/migrate.sh"]
+    environment:
+      FRM_HOME: /var/lib/frm/${BAYON_PROJECT:?}
+      FRM_SECRET_STORE: file
+      FRM_SECRETS_DIR: /run/secrets
+    volumes:
+      - home:/var/lib/frm/${BAYON_PROJECT:?}
+      - ${BAYON_DIR:?}/backups:/var/lib/frm/${BAYON_PROJECT:?}/backups
+      - ${BAYON_DIR:?}/secrets/migrate:/run/secrets:ro
+    cpus: 1
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+
+  # REST, /ws and /mcp: on the internal network only, never published.
+  api:
+    <<: *app
+    hostname: api
+    command:
+      - node
+      - /opt/bayon/deploy/run.mjs
+      - api
+      - /opt/bayon/apps/api/dist/main.js
+    environment:
+      FRM_HOME: /var/lib/frm/${BAYON_PROJECT:?}
+      FRM_SECRET_STORE: file
+      FRM_SECRETS_DIR: /run/secrets
+      FRM_API_HOST: 0.0.0.0
+      FRM_API_PORT: "3010"
+    volumes:
+      - home:/var/lib/frm/${BAYON_PROJECT:?}
+      - ${BAYON_DIR:?}/secrets/api:/run/secrets:ro
+    networks:
+      - core
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3010/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 10s
+    cpus: 2
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 256
+
+  # The daemon: sessions on the container executor over ssh to the host (design §3), no socket.
+  supervisor:
+    <<: *app
+    hostname: supervisor
+    command:
+      - node
+      - /opt/bayon/deploy/run.mjs
+      - supervisor
+      - /opt/bayon/apps/supervisor/dist/main.js
+    environment:
+      FRM_HOME: /var/lib/frm/${BAYON_PROJECT:?}
+      FRM_SECRET_STORE: file
+      FRM_SECRETS_DIR: /run/secrets
+      FRM_MCP_URL: http://api:3010/mcp
+    volumes:
+      - home:/var/lib/frm/${BAYON_PROJECT:?}
+      - ${BAYON_DIR:?}/backups:/var/lib/frm/${BAYON_PROJECT:?}/backups
+      - ${BAYON_DIR:?}/secrets/supervisor:/run/secrets:ro
+    networks:
+      - core
+      - egress
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('node:net').connect(process.env.FRM_HOME + '/s.sock').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 30s
+    cpus: 2
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 512
+
+  # The one published port: the app, the login, and /api + /ws proxied with the bearer.
+  web:
+    <<: *app
+    hostname: web
+    command: ["node", "/opt/bayon/apps/web/dist/server/main.js"]
+    environment:
+      FRM_SECRET_STORE: file
+      FRM_SECRETS_DIR: /run/secrets
+      FRM_WEB_HOST: 0.0.0.0
+      FRM_WEB_PORT: "5173"
+      FRM_WEB_ORIGINS: http://${BAYON_ADDR:?}:${BAYON_PORT:?}
+      FRM_API_TARGET: http://api:3010
+    ports:
+      - ${BAYON_ADDR:?}:${BAYON_PORT:?}:5173
+    volumes:
+      - ${BAYON_DIR:?}/secrets/web:/run/secrets:ro
+    networks:
+      - edge
+      - core
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5173/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 10s
+    cpus: 0.5
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 128
+
+# Pinned outside Docker's default pools, away from the LAN (172.16/16) and the Mac's 192.168.0/24;
+# bayon.sh install preflights them. The ssh key's from= is the egress subnet.
+networks:
+  edge:
+    labels: *labels
+    ipam:
+      config:
+        - subnet: ${BAYON_NET:?}.0/26
+  core:
+    internal: true
+    labels: *labels
+    ipam:
+      config:
+        - subnet: ${BAYON_NET:?}.64/26
+  egress:
+    labels: *labels
+    ipam:
+      config:
+        - subnet: ${BAYON_NET:?}.128/26
+
+# External (review M5): bayon.sh install creates, labels and chowns it; compose never deletes it.
+volumes:
+  home:
+    external: true
+    name: ${BAYON_PROJECT:?}_home

@@ -1,0 +1,6 @@
+#!/bin/sh
+# A stand-in for macOS `security`, first on every vitest worker's PATH (vitest.setup.ts):
+# a test that forgets its own shim, or a supervisor or API child a test spawns, finds nothing here
+# instead of reading the operator's Keychain. 44 is what `security` exits with for a missing item.
+echo "security: the test suite's stand-in; the Keychain is never read in tests" >&2
+exit 44

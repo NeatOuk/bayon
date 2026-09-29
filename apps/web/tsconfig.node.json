@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The Node side of the web app: the Vite config and its dev proxy.
+    "rootDir": ".",
+    "outDir": "${configDir}/dist/node",
+    "tsBuildInfoFile": "${configDir}/dist/node/tsconfig.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "types": ["node"]
+  },
+  "include": [
+    "vite.config.ts",
+    "dev-proxy.ts",
+    "dev-proxy.test.ts",
+    "colours.test.ts",
+    "theme-contrast.ts"
+  ],
+  // dev-proxy.ts imports the origin guard it shares with the production edge server.
+  "references": [{ "path": "./tsconfig.server.json" }]
+}

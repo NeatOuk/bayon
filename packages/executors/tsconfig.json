@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // exec-shim.mjs ships as plain JS (uploaded to the docker host as-is); tsc type-checks it
+    // and emits it next to the executor that reads it.
+    "allowJs": true,
+    "checkJs": true
+  },
+  "references": [{ "path": "../core" }]
+}

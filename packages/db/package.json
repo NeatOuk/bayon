@@ -1,0 +1,46 @@
+{
+  "name": "@bayon/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@bayon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./supervisor": {
+      "@bayon/source": "./src/supervisor.ts",
+      "types": "./dist/supervisor.d.ts",
+      "default": "./dist/supervisor.js"
+    },
+    "./api": {
+      "@bayon/source": "./src/api.ts",
+      "types": "./dist/api.d.ts",
+      "default": "./dist/api.js"
+    },
+    "./operator": {
+      "@bayon/source": "./src/operator.ts",
+      "types": "./dist/operator.d.ts",
+      "default": "./dist/operator.js"
+    },
+    "./testing": {
+      "@bayon/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  },
+  "scripts": {
+    "migrate:up": "node dist/cli.js up",
+    "migrate:down": "node dist/cli.js down",
+    "migrate:status": "node dist/cli.js status"
+  },
+  "dependencies": {
+    "@bayon/core": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "kysely": "^0.29.5",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0"
+  }
+}

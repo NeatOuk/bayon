@@ -1,0 +1,6 @@
+{"type":"fixture_meta","hand_authored":true,"source":"acp/tool.ts shapes + the host's exit frame","case":"opencode dies mid-tool: no prompt response, so no terminal"}
+{"type":"frm.host.start","v":1,"runner_session_id":"ses_0000000000000000000000fix1","resumed":false,"model":"ollama/qwen3.8:27b"}
+{"type":"frm.host.turn","run_id":"run-1","rpc_id":3,"model":"ollama/qwen3.8:27b","output":false}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_0000000000000000000000fix1","update":{"sessionUpdate":"tool_call","toolCallId":"call_c1","title":"bash","kind":"execute","status":"pending","locations":[],"rawInput":{}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_0000000000000000000000fix1","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_c1","status":"in_progress","kind":"execute","title":"sleep 30","locations":[],"rawInput":{"command":"sleep 30"}}}}
+{"type":"frm.host.exit","code":null,"signal":"SIGKILL"}

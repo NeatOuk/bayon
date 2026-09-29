@@ -1,0 +1,16 @@
+-- 018_runs_ended_at_index (M4): the index the retry_storm scans want.
+--
+-- listPairFailuresSince (admission's retry_storm gate) and listStormPairs (the watchdog's storm
+-- check) both filter runs on state and a lower bound on ended_at, then join sessions for the
+-- (runner, executor) pair. With no index on runs at all, SQLite drove the join from sessions —
+-- SCAN s, then a session_id lookup per row, plus a temp B-tree for the ORDER BY.
+--
+-- EXPLAIN QUERY PLAN on 4000 runs / 4000 sessions, before and after:
+--   before  SCAN s · SEARCH r USING INDEX sqlite_autoindex_runs_3 (session_id=?) · USE TEMP B-TREE
+--   after   SEARCH r USING INDEX ix_runs_state_ended_at (state=? AND ended_at>?) ·
+--           SEARCH s USING INDEX sqlite_autoindex_sessions_1 (id=?)
+--
+-- (state, ended_at), not (ended_at) alone: both columns are then index constraints rather than one,
+-- and the ordering column stays in the index so the temp B-tree goes too. A third column for
+-- error_class was measured and bought nothing at this shape, so it is left out.
+CREATE INDEX ix_runs_state_ended_at ON runs(state, ended_at);

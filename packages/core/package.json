@@ -1,0 +1,16 @@
+{
+  "name": "@bayon/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@bayon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "ulid": "^3.0.2",
+    "zod": "^4.6.2"
+  }
+}

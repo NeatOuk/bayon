@@ -1,0 +1,261 @@
+/*
+ * The one place colours live, in two layers. Primitives: the palette slots, filled per theme —
+ * Tokyo Night in .dark, and in :root cool neutral greys with Tokyo Night Day hues darkened until
+ * they pass AA on white. Semantic tokens: what a colour is for (primary, success, border, …),
+ * defined once from the primitives, so both themes share one mapping. Components use the Tailwind
+ * tokens registered below, never a colour literal or a primitive (colours.test.ts, which also
+ * holds every text pair to 4.5:1 and every control edge to 3:1 in both themes).
+ */
+@import "tailwindcss";
+/* The enter/exit keyframes the dialog, menu and select popups name (animate-in, fade-in-0, …). */
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * The registry components style orientation as data-horizontal: / data-vertical: (shadcn's
+ * tailwind.css). base-ui sets data-orientation, so those variants read it; without them Tailwind
+ * looks for a bare [data-horizontal] attribute that nothing sets (tabs.test.tsx).
+ */
+@custom-variant data-horizontal (&:where([data-orientation="horizontal"]));
+@custom-variant data-vertical (&:where([data-orientation="vertical"]));
+
+@theme inline {
+  --font-head: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  /* Page and section titles (h1–h4) outweigh a card's font-medium title. */
+  --font-weight-heading: 600;
+  --radius: var(--radius);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  /*
+   * Soft elevation: a wide, faint blur plus a tight one for edge definition. The tint is dark in
+   * both themes (a light tint reads as a glow); dark mode leans on hairline borders and lighter
+   * raised surfaces for depth, with --shadow-strength keeping its shadows visible at all.
+   */
+  --shadow-xs: 0 1px 2px 0
+    rgb(var(--shadow-tint) / calc(0.06 * var(--shadow-strength)));
+  --shadow-sm:
+    0 1px 3px 0 rgb(var(--shadow-tint) / calc(0.08 * var(--shadow-strength))),
+    0 1px 2px -1px rgb(var(--shadow-tint) / calc(0.08 * var(--shadow-strength)));
+  --shadow:
+    0 2px 4px -1px rgb(var(--shadow-tint) / calc(0.1 * var(--shadow-strength))),
+    0 1px 2px -1px rgb(var(--shadow-tint) / calc(0.08 * var(--shadow-strength)));
+  --shadow-md:
+    0 6px 10px -3px
+      rgb(var(--shadow-tint) / calc(0.12 * var(--shadow-strength))),
+    0 2px 4px -2px rgb(var(--shadow-tint) / calc(0.08 * var(--shadow-strength)));
+  --shadow-lg:
+    0 12px 20px -6px
+      rgb(var(--shadow-tint) / calc(0.16 * var(--shadow-strength))),
+    0 4px 8px -4px rgb(var(--shadow-tint) / calc(0.1 * var(--shadow-strength)));
+  --shadow-xl:
+    0 20px 32px -8px
+      rgb(var(--shadow-tint) / calc(0.2 * var(--shadow-strength))),
+    0 8px 16px -8px
+      rgb(var(--shadow-tint) / calc(0.12 * var(--shadow-strength)));
+  --shadow-2xl: 0 28px 48px -12px
+    rgb(var(--shadow-tint) / calc(0.25 * var(--shadow-strength)));
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-surface-raised: var(--surface-raised);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-selected: var(--selected);
+  --color-selected-foreground: var(--selected-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-border: var(--input-border);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+}
+
+/* Primitives, light: cool neutral greys; Tokyo Night Day hues, darkened to pass AA on white. */
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --shadow-tint: 22 22 30;
+  --shadow-strength: 1;
+  /* How much of a hue a soft surface (a -subtle tone, the selected row) mixes into the card. */
+  --tn-tint: 12%;
+  --tn-scrim: rgb(22 22 30 / 0.5);
+  --tn-bg-dark: #eceef4;
+  --tn-bg: #f6f7fb;
+  --tn-bg-card: #ffffff;
+  --tn-bg-raised: #ffffff;
+  --tn-bg-muted: #eceef4;
+  --tn-highlight: #e5e8f2;
+  --tn-border: #dfe2ec;
+  --tn-edge: #7d8399;
+  --tn-comment: #8990b3;
+  --tn-fg-muted: #565b73;
+  --tn-fg-dark: #3b3f52;
+  --tn-fg: #1a1b26;
+  --tn-on-hue: #ffffff;
+  --tn-blue: #2a5fd0;
+  --tn-cyan: #006a8e;
+  --tn-magenta: #7847bd;
+  --tn-orange: #965027;
+  --tn-yellow: #805d24;
+  --tn-green: #50702f;
+  --tn-teal: #33635c;
+  --tn-red: #b8283f;
+}
+
+/* Primitives, dark: Tokyo Night. */
+.dark {
+  color-scheme: dark;
+  --shadow-tint: 0 0 0;
+  --shadow-strength: 3;
+  --tn-tint: 15%;
+  --tn-scrim: rgb(0 0 0 / 0.6);
+  --tn-bg-dark: #16161e;
+  --tn-bg: #1a1b26;
+  --tn-bg-card: #1f2335;
+  --tn-bg-raised: #24283b;
+  --tn-bg-muted: #24283b;
+  --tn-highlight: #292e42;
+  --tn-border: #3b4261;
+  --tn-edge: #737aa2;
+  --tn-comment: #565f89;
+  --tn-fg-muted: #9aa3c8;
+  --tn-fg-dark: #a9b1d6;
+  --tn-fg: #c0caf5;
+  --tn-on-hue: #1a1b26;
+  --tn-blue: #7aa2f7;
+  --tn-cyan: #7dcfff;
+  --tn-magenta: #bb9af7;
+  --tn-orange: #ff9e64;
+  --tn-yellow: #e0af68;
+  --tn-green: #9ece6a;
+  --tn-teal: #1abc9c;
+  --tn-red: #f7768e;
+}
+
+/*
+ * Semantic tokens: one mapping for both themes (declared on .dark too, so a .dark subtree resolves
+ * them from its own primitives). A hover mixes toward the ink: darker in light, lighter in dark.
+ */
+:root,
+.dark {
+  --background: var(--tn-bg);
+  --foreground: var(--tn-fg);
+  --card: var(--tn-bg-card);
+  --card-foreground: var(--tn-fg);
+  /* Popovers, menus and dialogs: one step lighter than a card in dark, a shadow above it in light. */
+  --surface-raised: var(--tn-bg-raised);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--tn-fg);
+  --primary: var(--tn-blue);
+  --primary-hover: color-mix(in srgb, var(--tn-blue) 85%, var(--tn-fg));
+  --primary-foreground: var(--tn-on-hue);
+  --secondary: var(--tn-bg-muted);
+  --secondary-hover: var(--tn-highlight);
+  --secondary-foreground: var(--tn-fg);
+  --muted: var(--tn-bg-muted);
+  --muted-foreground: var(--tn-fg-muted);
+  --accent: var(--tn-highlight);
+  --accent-foreground: var(--tn-fg);
+  /* The chosen row, tab or pressed toggle: a primary tint that still reads on a card. */
+  --selected: color-mix(
+    in srgb,
+    var(--tn-blue) var(--tn-tint),
+    var(--tn-bg-card)
+  );
+  --selected-foreground: var(--tn-fg);
+  /* Status tones: solid, the ink on solid, and a soft surface. Green means success, nothing else. */
+  --success: var(--tn-green);
+  --success-foreground: var(--tn-on-hue);
+  --success-subtle: color-mix(
+    in srgb,
+    var(--tn-green) var(--tn-tint),
+    var(--tn-bg-card)
+  );
+  --warning: var(--tn-yellow);
+  --warning-foreground: var(--tn-on-hue);
+  --warning-subtle: color-mix(
+    in srgb,
+    var(--tn-yellow) var(--tn-tint),
+    var(--tn-bg-card)
+  );
+  --info: var(--tn-cyan);
+  --info-foreground: var(--tn-on-hue);
+  --info-subtle: color-mix(
+    in srgb,
+    var(--tn-cyan) var(--tn-tint),
+    var(--tn-bg-card)
+  );
+  --danger: var(--tn-red);
+  --danger-foreground: var(--tn-on-hue);
+  --danger-subtle: color-mix(
+    in srgb,
+    var(--tn-red) var(--tn-tint),
+    var(--tn-bg-card)
+  );
+  /* The registry's name for danger, kept so every existing caller still means the same thing. */
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
+  /* A hairline between surfaces; controls take the stronger input-border (3:1 against a card). */
+  --border: var(--tn-border);
+  --input: var(--tn-bg-card);
+  --input-border: var(--tn-edge);
+  --ring: var(--tn-blue);
+  /* Behind a dialog: dims the page in both themes. */
+  --overlay: var(--tn-scrim);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  /* Comfortable density: 14px body text; 12px (text-xs) is for metadata only. */
+  body {
+    @apply bg-background font-sans text-sm leading-normal text-foreground;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-head font-heading;
+  }
+  /* Motion is decoration: an operator who asks for less gets none. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{"type":"fixture_meta","hand_authored":true,"source":"codex-rs/exec/src/exec_events.rs @ rust-v0.154.0 + the turn host's frames","case":"a usage-limit failure: a stream error, then turn.failed; exit 1 carries nothing"}
+{"type":"frm.host.start","v":1,"runner_session_id":"rsid-1","thread_id":null,"usage_total":null}
+{"type":"frm.host.turn","run_id":"run-1","model":"gpt-5.6-luna","resume":false,"argv":["codex","exec","--json","-"]}
+{"type":"thread.started","thread_id":"0199a0b1-0000-7000-8000-000000000006"}
+{"type":"turn.started"}
+{"type":"error","message":"You've hit your usage limit. Try again later."}
+{"type":"turn.failed","error":{"message":"You've hit your usage limit. Try again later."}}
+{"type":"frm.host.exit","run_id":"run-1","code":1,"signal":null}

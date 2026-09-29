@@ -1,0 +1,6 @@
+{"type":"fixture_meta","hand_authored":true,"source":"the turn host's structured-output check","case":"a review turn whose final answer is not valid against the schema"}
+{"type":"frm.host.start","v":1,"runner_session_id":"ses_0000000000000000000000fix1","resumed":false,"model":"ollama/qwen3.8:27b"}
+{"type":"frm.host.turn","run_id":"run-1","rpc_id":3,"model":"ollama/qwen3.8:27b","output":true}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_0000000000000000000000fix1","update":{"sessionUpdate":"agent_message_chunk","messageId":"msg_fix_3","content":{"type":"text","text":"I found one bug: add subtracts."}}}}
+{"type":"frm.host.output","run_id":"run-1","ok":false,"path":null,"issues":["the answer is not JSON"]}
+{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":120,"outputTokens":30,"totalTokens":2200,"cachedReadTokens":2050},"_meta":{}}}

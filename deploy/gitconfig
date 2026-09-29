@@ -1,0 +1,10 @@
+# The Bayon image's system git config. The supervisor's own
+# mirrors fetch over HTTPS with a fine-grained read-only token, handed to git by the helper below at
+# the moment git asks: never argv, env, a config value, the DB or a log. ssh-style origins are
+# rewritten to HTTPS, so no GitHub ssh key is needed.
+[credential "https://github.com"]
+	helper = /opt/bayon/deploy/git-credential-frm
+	useHttpPath = false
+[url "https://github.com/"]
+	insteadOf = git@github.com:
+	insteadOf = ssh://git@github.com/

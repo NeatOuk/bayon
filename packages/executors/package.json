@@ -1,0 +1,32 @@
+{
+  "name": "@bayon/executors",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@bayon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "@bayon/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./contract": {
+      "@bayon/source": "./src/contract.ts",
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    },
+    "./secret-file": {
+      "@bayon/source": "./src/secret-file.ts",
+      "types": "./dist/secret-file.d.ts",
+      "default": "./dist/secret-file.js"
+    }
+  },
+  "dependencies": {
+    "@bayon/core": "workspace:*",
+    "node-pty": "^1.1.0",
+    "zod": "^4.6.2"
+  }
+}

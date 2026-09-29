@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "composite": true,
+    "rootDir": "${configDir}/src",
+    "outDir": "${configDir}/dist",
+    "tsBuildInfoFile": "${configDir}/dist/tsconfig.tsbuildinfo"
+  },
+  "include": ["${configDir}/src"]
+}

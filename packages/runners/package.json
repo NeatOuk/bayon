@@ -1,0 +1,51 @@
+{
+  "name": "@bayon/runners",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle": "rolldown dist/adapters/fixture/program.js --file dist/adapters/fixture/program.bundle.mjs --format esm --platform node --minify"
+  },
+  "exports": {
+    ".": {
+      "@bayon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fixture": {
+      "@bayon/source": "./src/adapters/fixture/index.ts",
+      "types": "./dist/adapters/fixture/index.d.ts",
+      "default": "./dist/adapters/fixture/index.js"
+    },
+    "./script": {
+      "@bayon/source": "./src/adapters/script/index.ts",
+      "types": "./dist/adapters/script/index.d.ts",
+      "default": "./dist/adapters/script/index.js"
+    },
+    "./testing": {
+      "@bayon/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./conformance": {
+      "@bayon/source": "./src/conformance/index.ts",
+      "types": "./dist/conformance/index.d.ts",
+      "default": "./dist/conformance/index.js"
+    },
+    "./models": {
+      "@bayon/source": "./src/models.ts",
+      "types": "./dist/models.d.ts",
+      "default": "./dist/models.js"
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.284",
+    "@anthropic-ai/sdk": "0.125.0",
+    "@bayon/core": "workspace:*",
+    "@bayon/executors": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "rolldown": "1.2.8"
+  }
+}

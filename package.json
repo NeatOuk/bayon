@@ -1,0 +1,32 @@
+{
+  "name": "bayon",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.26.0",
+  "engines": {
+    "node": "^22.13.0"
+  },
+  "scripts": {
+    "build": "tsc -b && pnpm --filter @bayon/runners bundle && pnpm --filter @bayon/web build",
+    "typecheck": "tsc -b",
+    "lint": "eslint . && prettier --check .",
+    "test": "vitest run --coverage",
+    "frm": "node tools/frm/dist/main.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^5.0.0",
+    "eslint": "^10.10.0",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.0",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.2"
+  }
+}

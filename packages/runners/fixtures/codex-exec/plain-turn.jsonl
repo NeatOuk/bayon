@@ -1,0 +1,9 @@
+{"type":"fixture_meta","hand_authored":true,"source":"codex-rs/exec/src/exec_events.rs @ rust-v0.154.0 + the turn host's frames","case":"one plain turn on a fresh thread"}
+{"type":"frm.host.start","v":1,"runner_session_id":"rsid-1","thread_id":null,"usage_total":null}
+{"type":"frm.host.turn","run_id":"run-1","model":"gpt-5.6-luna","resume":false,"argv":["codex","exec","--json","-"]}
+{"type":"thread.started","thread_id":"0199a0b1-0000-7000-8000-000000000001"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Replying with OK**"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":1000,"cache_write_input_tokens":0,"output_tokens":20,"reasoning_output_tokens":8}}
+{"type":"frm.host.exit","run_id":"run-1","code":0,"signal":null}

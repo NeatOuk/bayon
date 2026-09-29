@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Shared with the browser (apps/web): DOM globals, no automatic Node types.
+    "lib": ["es2024", "dom"],
+    "types": []
+  },
+  "references": [{ "path": "../core" }]
+}
