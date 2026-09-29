@@ -351,17 +351,45 @@ test("updates arrive over the WebSocket, and the browser infers nothing", async 
   expect(screen.getByRole("region", { name: "Needs you" }).textContent).toBe(
     "Needs youNothing needs you",
   );
-  // The fleet once, the pulse schedule, the projects (for a paused one) and the Inbox's open count
-  // the header rides too: no GET /sessions/:id for the one that left.
+  // The fleet once, the pulse schedule, the projects (for a paused one, and readiness with the
+  // runners, role bindings and settings) and the Inbox's open count the header rides too: no GET
+  // /sessions/:id for the one that left.
   expect(fetchMock.mock.calls.map(([input]) => String(input)).sort()).toEqual([
     "/api/v1/agents/pulse-policies",
     "/api/v1/fleet",
     "/api/v1/inbox?status=open",
     "/api/v1/projects",
+    "/api/v1/role-bindings",
+    "/api/v1/runners",
+    "/api/v1/settings",
   ]);
 
   // Query hands setQueryData to observers on its own schedule, hence findBy.
   send(fleet([builder], { attention: [crashed()] }));
   const needs = screen.getByRole("region", { name: "Needs you" });
   expect(await within(needs).findByText(/runner crashed/)).toBeTruthy();
+});
+
+// a fresh install with nothing certified said "Nothing needs you".
+test("an install that can't work yet says what to set up, each with its one action", async () => {
+  stubFetch({
+    "/api/v1/fleet": fleet([]),
+    "/api/v1/projects": { projects: [] },
+    "/api/v1/runners": { runners: [] },
+    "/api/v1/role-bindings": { items: [] },
+    "/api/v1/settings": { settings: [], require_certified: true },
+  });
+  renderWithProviders(<FleetScreen />);
+  const needs = await screen.findByRole("region", { name: "Needs you" });
+  expect(
+    await within(needs).findByText(
+      "No project yet: there is nothing to work on",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(needs)
+      .getByRole("link", { name: "Create a project" })
+      .getAttribute("href"),
+  ).toBe("#/projects/new");
+  expect(within(needs).queryByText("Nothing needs you")).toBeNull();
 });

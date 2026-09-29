@@ -186,9 +186,7 @@ test("a refused write says so, and the switch stays where it was", async () => {
   await user.click(await toggle());
   const dialog = await screen.findByRole("alertdialog");
   await user.click(within(dialog).getByRole("button", { name: "Turn on" }));
-  expect(
-    await within(dialog).findByText("Not saved: validation: not today"),
-  ).toBeTruthy();
+  expect(await within(dialog).findByText("Not saved: not today")).toBeTruthy();
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect((await toggle()).getAttribute("aria-checked")).toBe("false");
 });

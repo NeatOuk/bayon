@@ -187,6 +187,8 @@ export const ticketDetail = (
   handoffs: [],
   exports: [],
   economics: ZERO_ECONOMICS,
+  holder: null,
+  reviewing: null,
   events: { items: [], next_cursor: 0, has_more: false },
   ...rest,
 });

@@ -1,3 +1,4 @@
+import { isAgentRunner } from "@bayon/core";
 import type { RunnerView } from "@bayon/proto";
 import { useId } from "react";
 import { Label } from "@/components/ui/label";
@@ -42,7 +43,10 @@ export function UncertifiedWarning({
   );
 }
 
-/** The runner Select: each runner with its certification on `local`; a disabled one cannot be picked. */
+/**
+ * The runner Select: each agent runner with its certification on `local`; a disabled one cannot be
+ * picked, and the supervisor's own job runners are not offered at all.
+ */
 export function RunnerField({
   runners,
   loading,
@@ -55,7 +59,8 @@ export function RunnerField({
   readonly onChange: (runnerId: string | null) => void;
 }) {
   const labelId = useId();
-  const items = runners.map((runner) => ({
+  const offered = runners.filter(isAgentRunner);
+  const items = offered.map((runner) => ({
     value: runner.id,
     label: runner.id,
   }));
@@ -74,7 +79,7 @@ export function RunnerField({
           />
         </SelectTrigger>
         <SelectContent>
-          {runners.map((runner) => (
+          {offered.map((runner) => (
             <SelectItem
               key={runner.id}
               value={runner.id}

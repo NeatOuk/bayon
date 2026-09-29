@@ -1,6 +1,9 @@
+import { isAgentRunner } from "@bayon/core";
 import type {
+  RepoCheckView,
   CreateProjectRequest,
   DeliveryConfigView,
+  FolderCheck,
   ProjectCreated,
   RunnerView,
 } from "@bayon/proto";
@@ -33,7 +36,13 @@ import {
 } from "@/docs/docs-form";
 import { QaCreateSection } from "@/qa/qa-create-section";
 import { BLANK_QA, checkQa, type QaDraft } from "@/qa/qa-form";
-import { createProject } from "@/projects/projects-api";
+import { checkRepo, createProject } from "@/projects/projects-api";
+import { RepoCheckPanel } from "@/projects/repo-check";
+import { Loading } from "@/components/loading";
+import { FolderPanel } from "@/projects/folder-check";
+import { checkFolder, isFolderPath } from "@/projects/folders-api";
+import { refusalMessage } from "@/notify/notify-api";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { runnersQuery } from "@/runners/runners-api";
 import { PROJECTS_HREF, projectHref, ticketsHref } from "@/routing";
 import { certificationOn } from "@/ide/runner-certification";
@@ -170,7 +179,7 @@ function warningsOf(
     const reviewer = runners.find((r) => r.id === reviewerRunnerId);
     if (reviewer?.caps?.outputSchema !== true) {
       warnings.push(
-        `${reviewerRunnerId} has no structured output: plan reviews will run, but code reviews need one bound to code_reviewer.`,
+        `${reviewerRunnerId} cannot review code (it has no structured output), so only plan reviews will run: pick a reviewer runner that has structured output.`,
       );
     }
   }
@@ -203,15 +212,64 @@ export function NewProjectScreen() {
     },
   });
 
+  // A folder is checked before anything is created: on leaving the field,
+  // and again at Create, which goes on only when the folder is ready.
+  const [folder, setFolder] = useState<FolderCheck | null>(null);
+  const folderCheck = useMutation({ mutationFn: checkFolder });
+  // A https or ssh URL is read by the supervisor, as the first clone will read it: on
+  // leaving the field, and again by the server at Create, which refuses one it cannot read.
+  const [repo, setRepo] = useState<RepoCheckView | null>(null);
+  const repoCheck = useMutation({ mutationFn: checkRepo });
+
   const set = (patch: Partial<Form>) => {
     setForm((current) => ({ ...current, ...patch }));
     create.reset();
+    if (patch.repoUrl !== undefined) {
+      setFolder(null);
+      folderCheck.reset();
+    }
+    if (patch.repoUrl !== undefined || patch.baseBranch !== undefined) {
+      setRepo(null);
+      repoCheck.reset();
+    }
+  };
+
+  /** The URL's check, asked now: null when it could not be asked (the server then says why). */
+  const checkUrl = async (): Promise<RepoCheckView | null> => {
+    const base = form.baseBranch.trim();
+    const found = await repoCheck
+      .mutateAsync({
+        repo_url: form.repoUrl.trim(),
+        ...(base === "" ? {} : { base_branch: base }),
+      })
+      .catch(() => null);
+    setRepo(found);
+    return found;
   };
 
   const request = requestOf(form);
+  const checkThenCreate = async () => {
+    const path = form.repoUrl.trim();
+    if (!isFolderPath(path)) {
+      const found = repo ?? (await checkUrl());
+      // Not refused here unless the check said so: an unanswered check is the server's to judge.
+      if (
+        request !== null &&
+        (found === null || found.ok || found.outcome === null)
+      )
+        create.mutate(request);
+      return;
+    }
+    const found = await folderCheck.mutateAsync(path).catch(() => null);
+    setFolder(found);
+    if (found?.state === "ready" && request !== null) create.mutate(request);
+  };
   const error = create.error?.message ?? null;
   const warnings = warningsOf(form, runners.data?.runners ?? []);
-  const runnerIds = (runners.data?.runners ?? []).map((r) => r.id);
+  // Only agent runners: the supervisor's job runners are never offered.
+  const runnerIds = (runners.data?.runners ?? [])
+    .filter(isAgentRunner)
+    .map((r) => r.id);
   const executorIds = (executors.data?.executors ?? []).map((e) => e.id);
 
   // The create's own request: whether it carried a Jira source (reset with the mutation).
@@ -263,8 +321,8 @@ export function NewProjectScreen() {
         <FirstSyncLine sync={firstSync} />
         <p className="text-sm text-muted-foreground">
           {created.orchestrator_agent_id === null
-            ? `Stand up a session on ${created.builder_agent_id}.`
-            : `Stand up a session on ${created.builder_agent_id}, or staff a mission on ${created.orchestrator_agent_id}.`}
+            ? "Next: add a ticket, then press Start work on it."
+            : `Next: add a ticket, then press Start work on it. Or give ${created.orchestrator_agent_id} a mission, and it staffs tickets itself.`}
         </p>
         <Button
           size="sm"
@@ -302,16 +360,7 @@ export function NewProjectScreen() {
         </Field>
         <Field
           label="Repo URL"
-          hint={
-            <>
-              https, ssh, or an absolute folder path inside one allowed from a
-              shell (a folder with submodules becomes one project, its
-              submodules inside it) with{" "}
-              <span className="font-mono">
-                frm settings set projects.local_roots &lt;folder&gt; --yes
-              </span>
-            </>
-          }
+          hint="https, ssh, or the full path of a folder on the machine Bayon runs on, starting with /. A folder is checked before anything is created; one with submodules becomes one project, its submodules inside it."
         >
           {({ id, describedBy }) => (
             <Input
@@ -319,9 +368,42 @@ export function NewProjectScreen() {
               aria-describedby={describedBy}
               value={form.repoUrl}
               onChange={(event) => set({ repoUrl: event.target.value })}
+              onBlur={() => {
+                const path = form.repoUrl.trim();
+                if (isFolderPath(path))
+                  folderCheck.mutate(path, { onSuccess: setFolder });
+                else if (path !== "" && repo === null && !repoCheck.isPending)
+                  void checkUrl();
+              }}
             />
           )}
         </Field>
+        {folderCheck.isError && (
+          <Alert status="error">
+            <AlertTitle>Could not check the folder.</AlertTitle>
+            <AlertDescription>
+              {refusalMessage(folderCheck.error)}
+            </AlertDescription>
+          </Alert>
+        )}
+        {repoCheck.isPending && (
+          <Loading label="Checking that Bayon can read the repository…" />
+        )}
+        {repoCheck.isError && (
+          <Alert status="error">
+            <AlertTitle>Could not check the repository.</AlertTitle>
+            <AlertDescription>
+              {refusalMessage(repoCheck.error)}
+            </AlertDescription>
+          </Alert>
+        )}
+        {repo !== null && <RepoCheckPanel check={repo} />}
+        {folder !== null && (
+          <FolderPanel
+            check={folder}
+            onChanged={() => void checkThenCreate()}
+          />
+        )}
         <Field label="Base branch (optional)">
           {({ id }) => (
             <Input
@@ -414,10 +496,13 @@ export function NewProjectScreen() {
           </p>
         )}
         <Button
-          disabled={request === null || create.isPending}
-          onClick={() => {
-            if (request !== null) create.mutate(request);
-          }}
+          disabled={
+            request === null ||
+            create.isPending ||
+            folderCheck.isPending ||
+            repoCheck.isPending
+          }
+          onClick={() => void checkThenCreate()}
         >
           Create
         </Button>

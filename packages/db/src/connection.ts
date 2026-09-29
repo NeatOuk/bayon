@@ -77,7 +77,7 @@ function applyPragmas(raw: Database.Database): Result<void> {
         failure(
           "validation",
           `pragmas did not apply: ${readBack.value.join(", ")}. The database must be a local ` +
-            "file: :memory: and network filesystems cannot run WAL (§4).",
+            "file on this machine: an in-memory database or one on a network drive cannot run in WAL mode.",
         ),
       );
 }

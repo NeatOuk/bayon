@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { err, ok, type Clock, type Result } from "@bayon/core";
 import { Logger } from "@nestjs/common";
 import {
@@ -24,6 +23,7 @@ import { ExecutorsCreateService } from "./executors/executors-create-service.js"
 import { mcpDbStore } from "./mcp/db-store.js";
 import { MCP_SETTING_KEYS, mcpLimits, type McpLimits } from "./mcp/limits.js";
 import { connectRelay, type RelayClient } from "./relay/relay-client.js";
+import { trustedRelayPath } from "./relay/relay-path.js";
 import { startApi, type ApiDeps, type RunningApi } from "./server.js";
 import { GateService } from "./gates/gate-service.js";
 import { HistoryService } from "./history/history-service.js";
@@ -38,13 +38,12 @@ import type { NotifyLogger } from "./notify/deliver.js";
 import { Notifier } from "./notify/notifier.js";
 import { NotificationsService } from "./notify/service.js";
 import { mailParties } from "./notify/settings.js";
+import { commandRepoProbe } from "./projects/repo-probe.js";
+import { rateLimit } from "./projects/rate-limit.js";
 import { ProjectsService } from "./projects/projects-service.js";
+import { FoldersService } from "./projects/folders/folders-service.js";
+import { ensureLocalKey } from "./projects/folders/local-key.js";
 import { TicketService } from "./tickets/ticket-service.js";
-
-/** The relay socket's path under FRM_HOME (apps/supervisor/src/paths.ts's relaySocketPath): a
- * sibling to the control socket, one per FRM_HOME. Duplicated, not imported — apps/api has no
- * dependency on apps/supervisor, only on the shared packages/* both sides import. */
-const relaySocketPath = (home: string): string => join(home, "relay.sock");
 
 export interface BootedApi {
   readonly api: RunningApi;
@@ -55,6 +54,15 @@ export interface BootedApi {
 const tag = (m: MigrationRef) =>
   `${String(m.version).padStart(3, "0")}_${m.name}`;
 
+/** How far behind, in a few words: the whole list is in the error's cause. */
+const pendingCount = (pending: readonly MigrationRef[]): string => {
+  const first = pending[0];
+  if (first === undefined) return "no migrations to apply";
+  return pending.length === 1
+    ? `migration ${tag(first)} to apply`
+    : `${pending.length} migrations to apply, from ${tag(first)}`;
+};
+
 /**
  * The API serves only a fully migrated database: the supervisor owns migrations (it runs them at
  * boot), so pending or drifted files mean this API and that DB do not belong together yet.
@@ -63,14 +71,15 @@ export function checkMigrations(status: MigrationStatus): Result<void> {
   if (status.drifted.length > 0)
     return err({
       class: "validation",
-      message: `migrations drifted: ${status.drifted.map(tag).join(", ")}; restore the applied files`,
+      message: `The database was upgraded with migration files that have since changed (${status.drifted.map(tag).join(", ")}): restore those files from the release that applied them.`,
       retryable: false,
     });
   if (status.pending.length > 0)
     return err({
       class: "validation",
-      message: `migrations pending: ${status.pending.map(tag).join(", ")}; start the supervisor or run migrate:up`,
+      message: `The database needs an upgrade (${pendingCount(status.pending)}): start the supervisor, which applies it, then start the API again.`,
       retryable: false,
+      cause: { pending: status.pending.map(tag) },
     });
   return ok(undefined);
 }
@@ -104,13 +113,27 @@ function notifyLogger(): NotifyLogger {
   };
 }
 
+/**
+ * The host-only key the GUI's proxy proves "this browser is on the host" with (§14 amendment,
+ *); null without FRM_HOME or when it cannot be written, which makes nothing local.
+ */
+function localBrowserKey(frmHome: string | null): string | null {
+  if (frmHome === null) return null;
+  const key = ensureLocalKey(frmHome);
+  if (key.ok) return key.value;
+  new Logger("folders").warn(
+    `${key.error.message}: no browser counts as on this host, so folders are allowed from a terminal only`,
+  );
+  return null;
+}
+
 /** Config from `env`, the DB opened and checked, then the API listening. Refuses rather than half-starts. */
 export async function bootApi(o: {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly clock: Clock;
   readonly logger?: ApiDeps["logger"];
 }): Promise<Result<BootedApi>> {
-  const config = loadConfig(o.env);
+  const config = await loadConfig(o.env);
   if (!config.ok) return config;
   const path = loadDbPath(o.env);
   if (!path.ok) return path;
@@ -133,7 +156,15 @@ export async function bootApi(o: {
   let relay: RelayClient | undefined;
   try {
     const runtimeDir = loadRuntimeDir(o.env);
-    if (frmHome !== null) relay = connectRelay(relaySocketPath(frmHome));
+    if (frmHome !== null) {
+      // Only a socket in this user's own closed directory is trusted; else no /ws/pty (M4).
+      const path = trustedRelayPath(frmHome);
+      if (path.ok) relay = connectRelay(path.value);
+      else
+        new Logger("relay").warn(
+          `the terminal relay is off: ${path.error.message}`,
+        );
+    }
     const logger = jiraLogger();
     // The host store JIRA_API_TOKEN is read from at each sync, built once as the supervisor's is.
     const token = jiraTokenStore(o.env);
@@ -143,9 +174,10 @@ export async function bootApi(o: {
       secrets: token.secrets,
       parties: () => mailParties(db),
     });
+    const store = dbStore(db);
     const api = await startApi({
       config: config.value,
-      store: dbStore(db),
+      store,
       clock: o.clock,
       runtimeDir,
       logger: o.logger,
@@ -159,6 +191,19 @@ export async function bootApi(o: {
         db,
         clock: o.clock,
         mirrorsRoot: loadMirrorsRoot(o.env),
+        // A URL is read by the supervisor before it is taken; the store the fix names
+        // is the one the supervisor reads its forge token from, on the same host.
+        repoProbe: commandRepoProbe({ store, clock: o.clock }),
+        remoteLimit: rateLimit(o.clock),
+        storeHint: {
+          kind: token.kind,
+          service: token.keychain?.service ?? null,
+        },
+      }),
+      folders: new FoldersService({
+        db,
+        frmHome,
+        localKey: localBrowserKey(frmHome),
       }),
       history: new HistoryService({ db, clock: o.clock }),
       jira: new JiraService({ db, sync: jiraSync, token }),

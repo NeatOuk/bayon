@@ -104,10 +104,8 @@ test("the default home's API reads the live install's service; a scratch home's 
     jiraTokenStore({ FRM_HOME: join(userInfo().homedir, ".foreman") }, keychain)
       .keychain,
   ).toEqual({ service: "foreman", owner: true });
-  expect(jiraTokenStore({}, keychain).keychain).toEqual({
-    service: "foreman",
-    owner: true,
-  });
+  // No home named: under the test guard (FRM_NO_DEFAULT_HOME) never the live install's service.
+  expect(jiraTokenStore({}, keychain).keychain?.service).not.toBe("foreman");
   const scratch = jiraTokenStore(SCRATCH, keychain).keychain;
   expect(scratch?.owner).toBe(false);
   expect(scratch?.service).not.toBe("foreman");

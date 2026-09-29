@@ -297,7 +297,7 @@ export class JiraSync {
     return source === null
       ? err({
           class: "conflict",
-          message: `project ${workspaceId} has no Jira source: set one with PATCH /projects/${workspaceId} {"jira": {"url", "email", "jql"}}`,
+          message: `project ${workspaceId} has no Jira source: add one under Jira in the project's settings`,
           retryable: false,
         })
       : ok({ workspaceId, source, host: jiraHost(source.url) });

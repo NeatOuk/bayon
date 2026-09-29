@@ -3,6 +3,7 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  GUARDED_HOME,
   OWNER_KEYCHAIN_SERVICE,
   defaultHome,
   installHome,
@@ -39,7 +40,10 @@ describe("keychainScope", () => {
   });
 
   test("no FRM_HOME and no FRM_DB: the default home, service foreman", () => {
-    expect(keychainScope({})).toEqual({ service: "foreman", owner: true });
+    expect(keychainScope({}, defaultHome(), {})).toEqual({
+      service: "foreman",
+      owner: true,
+    });
     expect(OWNER_KEYCHAIN_SERVICE).toBe("foreman");
   });
 
@@ -78,7 +82,7 @@ describe("keychainScope", () => {
   });
 
   test("an empty FRM_HOME falls through, as unset", () => {
-    expect(keychainScope({ FRM_HOME: "" }).owner).toBe(true);
+    expect(keychainScope({ FRM_HOME: "" }, defaultHome(), {}).owner).toBe(true);
   });
 });
 
@@ -97,6 +101,20 @@ describe("installHome", () => {
   });
 
   test("neither: the default home", () => {
-    expect(installHome({ FRM_DB: "" })).toBe(defaultHome());
+    expect(installHome({ FRM_DB: "" }, {})).toBe(defaultHome());
+  });
+
+  test("neither, under FRM_NO_DEFAULT_HOME: a path that cannot exist, never ~/.foreman", () => {
+    expect(installHome({}, { FRM_NO_DEFAULT_HOME: "1" })).toBe(GUARDED_HOME);
+    expect(installHome({ FRM_NO_DEFAULT_HOME: "1" }, {})).toBe(GUARDED_HOME);
+    expect(
+      keychainScope({}, defaultHome(), { FRM_NO_DEFAULT_HOME: "1" }),
+    ).toMatchObject({
+      owner: false,
+    });
+    // A named home is used as named, guard or not.
+    expect(installHome({ FRM_HOME: "/h" }, { FRM_NO_DEFAULT_HOME: "1" })).toBe(
+      "/h",
+    );
   });
 });

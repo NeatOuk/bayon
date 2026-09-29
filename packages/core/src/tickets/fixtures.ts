@@ -76,11 +76,14 @@ export function build(b: Build): NextStepFacts {
     gates,
     liveGateIds: [],
     holder: null,
+    starting: null,
+    reviewing: null,
     handoffPending: false,
     transitions: allowedTransitions({ ticket, actor: OPERATOR, facts: law }),
     parkNote: null,
     pause: { fleet: false, project: false },
     hasOrchestrator: true,
+    hasBuilder: false,
     qaConfigured: false,
     ci: NO_CI_WAIT,
     merge: law.merge,
@@ -91,7 +94,8 @@ export function build(b: Build): NextStepFacts {
 export const holder = (
   state: NextStepHolder["state"],
   turns = 14,
-): NextStepHolder => ({ agent: "agent-7", state, turns });
+  scripted = false,
+): NextStepHolder => ({ agent: "agent-7", state, turns, scripted });
 
 export const failed = (
   kind: string,
@@ -201,6 +205,8 @@ export function waitFactsOf(f: NextStepFacts): WaitFacts | null {
     open_questions: f.openQuestions,
     proposal_open: f.proposalOpen,
     holder_state: f.holder?.state ?? null,
+    spawn_queued: f.starting !== null,
+    reviewer_live: f.reviewing !== null,
     handoff_pending: f.handoffPending,
     has_orchestrator: f.hasOrchestrator,
     fleet_paused: f.pause.fleet,

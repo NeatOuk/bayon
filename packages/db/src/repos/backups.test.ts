@@ -1,7 +1,12 @@
 import { FakeClock } from "@bayon/core";
 import { afterAll, expect, test } from "vitest";
 import { tempDb, unwrap } from "../testing.js";
-import { getLastBackup, recordBackup, type NewBackup } from "./backups.js";
+import {
+  getLastBackup,
+  hasOkBackup,
+  recordBackup,
+  type NewBackup,
+} from "./backups.js";
 
 // backups: the supervisor records each finished attempt; the newest one is the last.
 const t = unwrap(await tempDb(new FakeClock(1_700_000_000_000)));
@@ -69,4 +74,31 @@ test.each<readonly [string, NewBackup]>([
   ],
 ])("recordBackup refuses %s", async (_, backup) => {
   expect(await recordBackup(t.db, backup)).toMatchObject(validation);
+});
+
+test("hasOkBackup: false with only failed attempts, true once one succeeded", async () => {
+  const own = unwrap(await tempDb(new FakeClock(1_700_000_000_000)));
+  try {
+    expect(unwrap(await hasOkBackup(own.db))).toBe(false);
+    unwrap(
+      await recordBackup(own.db, {
+        started_at: 1,
+        ended_at: 2,
+        outcome: "failed",
+        error: "no key",
+      }),
+    );
+    expect(unwrap(await hasOkBackup(own.db))).toBe(false);
+    unwrap(
+      await recordBackup(own.db, {
+        started_at: 3,
+        ended_at: 4,
+        outcome: "ok",
+        path: "/backups/c.db.enc",
+      }),
+    );
+    expect(unwrap(await hasOkBackup(own.db))).toBe(true);
+  } finally {
+    own.cleanup();
+  }
 });

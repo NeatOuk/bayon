@@ -76,6 +76,17 @@ export {
 } from "./profile-defaults.js";
 export { WorkspaceView, WorkspacesView } from "./workspaces.js";
 export {
+  FolderAllowRequest,
+  FolderAllowScope,
+  FolderAllowed,
+  FolderCheck,
+  FolderCheckRequest,
+  FolderInitRequest,
+  FolderState,
+  INITIALISABLE,
+  LOCAL_BROWSER_HEADER,
+} from "./folders.js";
+export {
   AUDIT_PAGE_DEFAULT_LIMIT,
   AUDIT_PAGE_MAX_LIMIT,
   AttentionAck,
@@ -106,6 +117,7 @@ export {
   AttachWhen,
   PulseReportPayload,
   PulseRunPayload,
+  RepoCheckPayload,
   ReportDir,
   RunnerConformancePayload,
   RunnerConformanceResult,
@@ -183,6 +195,8 @@ export {
   TICKETS_PAGE_MAX_LIMIT,
   NextStep,
   TicketDetail,
+  TicketHolder,
+  TicketReviewing,
   TicketEconomics,
   TicketEventView,
   TicketEventsPage,
@@ -320,6 +334,8 @@ export {
   ProjectSettingsState,
   ProjectView,
   ProjectsView,
+  RepoCheckRequest,
+  RepoCheckView,
 } from "./projects.js";
 export { StepTiersInput, StepTiersPatch } from "./step-tiers.js";
 export {

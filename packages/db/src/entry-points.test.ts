@@ -140,6 +140,8 @@ const OPERATOR_WRITERS = [
   "setFleetPausedFromCli",
   // frm settings set: one governed setting, the shell door to the security controls.
   "setSettingFromCli",
+  // frm roots add|remove: projects.local_roots read, changed and written in one transaction.
+  "updateSettingFromCli",
 ];
 
 const names = (entry: object) => Object.keys(entry);

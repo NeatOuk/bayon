@@ -6,7 +6,7 @@ import type {
   TransitionRequest,
 } from "@bayon/proto";
 
-// The ticket screens' pure half: board columns, how a refusal reads, the notes a move needs, and
+// The ticket screens' pure half: board columns, the notes a move needs, and
 // the sessions (hence agents) behind a ticket.
 
 /** `ticket_events.actor_kind` of a session's write (law facts); the operator's is "operator". */
@@ -66,18 +66,6 @@ export function boardColumns(
     };
   });
 }
-
-/** A refusal as the operator reads it: the rule, why, and the detail (M1 contract 2). */
-export const refusalText = ({
-  rule,
-  reason,
-  detail,
-}: {
-  readonly rule: string;
-  readonly reason?: string | undefined;
-  readonly detail?: string | undefined;
-}): string =>
-  `refused by ${rule}${reason === undefined ? "" : ` (${reason})`}${detail === undefined ? "" : `: ${detail}`}`;
 
 export type NoteField =
   "reason" | "override_note" | "blocked_reason" | "unblock_condition";

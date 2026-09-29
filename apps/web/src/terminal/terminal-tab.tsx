@@ -167,7 +167,7 @@ export function TerminalTab({
         <EmptyHeader>
           <EmptyTitle>Not attached</EmptyTitle>
           <EmptyDescription>
-            Attach above to take over this session's terminal (§12.5).
+            Attach above to take over this session's terminal.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

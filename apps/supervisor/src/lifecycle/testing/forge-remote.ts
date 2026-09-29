@@ -1,5 +1,5 @@
 // A stand-in for a private https repository on a forge: a `git` first on PATH that, for
-// a clone or fetch whose remote is `https://github.com/…`, demands a credential exactly as such a
+// a clone, fetch or ls-remote whose remote is `https://github.com/…`, demands a credential exactly as such a
 // remote does — it asks git's own configured credential helpers (`git credential fill`, under the
 // same flags and environment the real call got) and refuses unless they answer with `token`. Once
 // answered, it serves `source` in the forge's place. Every other call is the real git. No network
@@ -59,7 +59,7 @@ const sub = args[i];
 const pre = args.slice(0, i);
 const real = (argv) => spawnSync(REAL, argv, { stdio: "inherit" }).status ?? 1;
 let forge = false;
-if (sub === "clone") forge = args.slice(i).some((a) => a.startsWith(HOST));
+if (sub === "clone" || sub === "ls-remote") forge = args.slice(i).some((a) => a.startsWith(HOST));
 if (sub === "fetch") {
   const at = pre.indexOf("-C");
   const url = spawnSync(REAL, ["-C", at >= 0 ? pre[at + 1] : ".", "config", "remote.origin.url"], {
@@ -77,9 +77,16 @@ if (fill.status !== 0 || password === null || password[1] !== TOKEN) {
   process.stderr.write(fill.stderr || "remote: Invalid username or token.\\nfatal: Authentication failed for 'https://github.com/'\\n");
   process.exit(128);
 }
-process.exit(real(args.map((a, k) =>
+// The forge is served from a local path in its place: the transport allow-list the call carries
+// (https and ssh) was for the forge's https, so it is swapped for the local one here.
+const served = args.map((a, k) =>
   k > i && (a.startsWith(HOST) || (sub === "fetch" && a === "origin")) ? SOURCE : a,
-)));
+);
+const local = served.filter(
+  (a, k) =>
+    !(k < i && (a.startsWith("protocol.") || (a === "-c" && (served[k + 1] || "").startsWith("protocol.")))),
+);
+process.exit(real(["-c", "protocol.file.allow=always", ...local]));
 `;
   writeFileSync(join(bin, "git"), script, { mode: 0o755 });
   return {

@@ -27,6 +27,13 @@ const OPEN_PR = {
   deliveries: [deliveryRow("R1", "pr_open")],
 };
 
+const PRIORITISE =
+  "Waiting for the orchestrator to prioritise it (it wakes only when other work is due)";
+const START = { kind: "start", label: "Start work" } as const;
+const BUILDER = { hasBuilder: true };
+const QUEUED = { starting: { agent: "demo-builder" } };
+const REVIEWER = { agent: "demo-reviewer" };
+
 const ROWS: readonly Row[] = [
   // rework after a pull request: a merge closes it, an open one is the wait.
   row(
@@ -226,7 +233,7 @@ const ROWS: readonly Row[] = [
     { status: "backlog" },
     {
       waiting_on: "orchestrator",
-      reason: "Waiting for the orchestrator to prioritise it",
+      reason: PRIORITISE,
     },
   ),
   row(
@@ -243,7 +250,7 @@ const ROWS: readonly Row[] = [
     { status: "backlog", facts: { pause: FLEET } },
     {
       waiting_on: "paused",
-      reason: `${FLEET_PAUSED}Waiting for the orchestrator to prioritise it`,
+      reason: `${FLEET_PAUSED}${PRIORITISE}`,
       action: RESUME_FLEET,
     },
   ),
@@ -252,8 +259,7 @@ const ROWS: readonly Row[] = [
     { status: "backlog", facts: { pause: PROJECT } },
     {
       waiting_on: "paused",
-      reason:
-        "Project is paused. Next: Waiting for the orchestrator to prioritise it",
+      reason: `Project is paused. Next: ${PRIORITISE}`,
       action: RESUME_PROJECT,
     },
   ),
@@ -272,6 +278,110 @@ const ROWS: readonly Row[] = [
       waiting_on: "you",
       reason: "Prioritised. No orchestrator in this project: staff it yourself",
       action: STAFF_HINT,
+    },
+  ),
+  // Start work: a builder can take it, through the operator's own doors.
+  row(
+    "backlog, a builder, an orchestrator: it still waits, Start work saves the wait",
+    { status: "backlog", facts: BUILDER },
+    { waiting_on: "orchestrator", reason: PRIORITISE, action: START },
+  ),
+  row(
+    "backlog, a builder, no orchestrator",
+    { status: "backlog", facts: { ...BUILDER, hasOrchestrator: false } },
+    {
+      waiting_on: "you",
+      reason: "No orchestrator in this project: prioritise it yourself",
+      action: START,
+    },
+  ),
+  row(
+    "backlog, a builder, the fleet paused: resuming comes first",
+    { status: "backlog", facts: { ...BUILDER, pause: FLEET } },
+    {
+      waiting_on: "paused",
+      reason: `${FLEET_PAUSED}${PRIORITISE}`,
+      action: RESUME_FLEET,
+    },
+  ),
+  row(
+    "prioritized, a builder, no orchestrator",
+    { status: "prioritized", facts: { ...BUILDER, hasOrchestrator: false } },
+    {
+      waiting_on: "you",
+      reason: "Prioritised. No orchestrator in this project: staff it yourself",
+      action: START,
+    },
+  ),
+  row(
+    "staffed, a builder, nobody holds it, an orchestrator",
+    { status: "staffed", facts: BUILDER },
+    {
+      waiting_on: "orchestrator",
+      reason: "No session holds it: waiting for the orchestrator to staff it",
+      action: START,
+    },
+  ),
+  row(
+    "released with a hand-off, a builder: no Start work outside a staffable status",
+    { status: "handoff_pending", facts: { ...BUILDER, handoffPending: true } },
+    {
+      waiting_on: "orchestrator",
+      reason:
+        "Released with a hand-off: waiting for the orchestrator to staff a successor",
+    },
+  ),
+  // A reviewer still live on it: staffing refuses, so nothing offers it.
+  row(
+    "review_fix, a builder, nobody holds it, a reviewer still finishing",
+    {
+      status: "review_fix",
+      facts: { ...BUILDER, hasOrchestrator: false, reviewing: REVIEWER },
+    },
+    {
+      waiting_on: "reviewer",
+      reason: "A reviewer is still finishing on this ticket: wait for it",
+    },
+  ),
+  row(
+    "backlog, a builder, a reviewer live: no Start work",
+    { status: "backlog", facts: { ...BUILDER, reviewing: REVIEWER } },
+    { waiting_on: "orchestrator", reason: PRIORITISE },
+  ),
+  // The window between "Staff" and its session row.
+  row(
+    "staffed, its spawn queued, no session row yet",
+    { status: "staffed", facts: { ...BUILDER, ...QUEUED } },
+    { waiting_on: "agent", reason: "Starting a session for demo-builder…" },
+  ),
+  row(
+    "prioritized, its spawn queued, no orchestrator",
+    {
+      status: "prioritized",
+      facts: { ...QUEUED, hasOrchestrator: false },
+    },
+    { waiting_on: "agent", reason: "Starting a session for demo-builder…" },
+  ),
+  row(
+    "staffed, its spawn queued, the project paused",
+    { status: "staffed", facts: { ...QUEUED, pause: PROJECT } },
+    { waiting_on: "agent", reason: "Starting a session for demo-builder…" },
+  ),
+  row(
+    "staffed, its holder idle after one turn",
+    { status: "staffed", facts: { ...QUEUED, holder: holder("idle", 1) } },
+    {
+      waiting_on: "agent",
+      reason: "agent-7 is starting (turn 1, between turns)",
+    },
+  ),
+  row(
+    "staffed, its holder idle on a script runner",
+    { status: "staffed", facts: { holder: holder("idle", 1, true) } },
+    {
+      waiting_on: "agent",
+      reason:
+        "agent-7 is idle after turn 1: its runner is a test script that does no real work, so this is where it stops",
     },
   ),
   // The worker statuses and their holder.
@@ -385,7 +495,14 @@ describe("nextStep", () => {
     const got = nextStep(
       build({
         status: "building",
-        facts: { holder: { agent: "who-ever", state: "running", turns: 2 } },
+        facts: {
+          holder: {
+            agent: "who-ever",
+            state: "running",
+            turns: 2,
+            scripted: false,
+          },
+        },
       }),
     );
     expect(got.reason).toBe("who-ever is building (turn 2)");

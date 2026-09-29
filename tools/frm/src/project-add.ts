@@ -58,7 +58,7 @@ export const PROJECT_ADD_USAGE = [
   "  the supervisor already registered (no default: frm never guesses a runner); --executor defaults",
   `  to ${DEFAULT_EXECUTOR}. Warns and prints the certify command when a pair is not certified (the`,
   "  write still happens: admission's require_certified is the real gate), and warns when the",
-  "  reviewer's runner has no structured output: code reviews need one bound to code_reviewer.",
+  "  reviewer's runner cannot review code (it has no structured output).",
   "  --dry-run prints the rows it would write and opens no database.",
 ].join("\n");
 
@@ -91,7 +91,7 @@ const planInputOf = (cmd: ProjectAddCommand): ProjectPlanInput => ({
   ...(cmd.base === undefined ? {} : { base: cmd.base }),
 });
 
-const FLAGS = {
+export const PROJECT_ADD_FLAGS = {
   repo: { type: "string" },
   runner: { type: "string" },
   executor: { type: "string" },
@@ -109,7 +109,7 @@ function readFlags(argv: readonly string[]) {
         args: [...argv],
         allowPositionals: true,
         strict: true,
-        options: FLAGS,
+        options: PROJECT_ADD_FLAGS,
       }),
     );
   } catch (cause) {
@@ -210,7 +210,7 @@ const runnersOf = (cmd: ProjectAddCommand, ids: ProjectIds): string[] => [
 ];
 
 const noSchemaWarning = (runnerId: string): string =>
-  `warning     ${runnerId} has no structured output: plan reviews will run, but code reviews need a runner with structured output bound to code_reviewer`;
+  `warning     ${runnerId} cannot review code (it has no structured output), so only plan reviews will run: pass --reviewer-runner with a runner that has structured output`;
 
 function describe(
   cmd: ProjectAddCommand,

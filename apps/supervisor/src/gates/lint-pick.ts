@@ -46,13 +46,13 @@ export async function chooseLintJob(
   if (adapter === undefined) {
     return ok({
       found: null,
-      detail: `lint_check runs the ${LINT_RUNNER_ID} job, and this supervisor has no adapter for it`,
+      detail: `The lint check needs the ${LINT_RUNNER_ID} job, which this supervisor does not have: waive this gate, or run a supervisor built with it`,
     });
   }
   if (i.subjectExecutorId !== LOCAL_EXECUTOR_ID) {
     return ok({
       found: null,
-      detail: `lint_check runs the repository's own lint command, and this subject was built on executor ${i.subjectExecutorId}: running its scripts on the supervisor's host would put untrusted code on the trusted side of §9.8. Turn gates.lint_check off for this fleet, or waive this gate.`,
+      detail: `The lint check runs the repository's own lint command, and this change was built on executor ${i.subjectExecutorId}: running its scripts on the supervisor's host would run untrusted code outside its sandbox. Waive this gate, or turn the lint check off with \`frm config apply <file.json>\`, the file holding {"settings": {"gates.lint_check": false}}.`,
     });
   }
   const agents = await listUtilAgents(i.db, LINT_RUNNER_ID);
@@ -61,7 +61,7 @@ export async function chooseLintJob(
   if (agent === undefined) {
     return ok({
       found: null,
-      detail: `lint_check runs the ${LINT_RUNNER_ID} job, and no enabled kind='util' agent of it exists: seed the lint checker's rows with \`frm config apply\``,
+      detail: `The lint check needs the ${LINT_RUNNER_ID} job's agent, and none is enabled: add the lint checker with \`frm config apply <file.json>\``,
     });
   }
   return ok({

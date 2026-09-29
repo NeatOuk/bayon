@@ -135,7 +135,7 @@ test("a failed read says so", async () => {
   renderWithProviders(<SpendScreen />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("Spend is unavailable")).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
 });
 
 test("the day and run-class tables carry what context compression saved, an estimate", async () => {

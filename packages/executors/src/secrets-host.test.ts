@@ -176,10 +176,8 @@ describe("hostSecrets: the Keychain belongs to its install", () => {
 
   test("the default home queries foreman", async () => {
     const shim = recorder();
-    for (const env of [
-      {},
-      { FRM_HOME: join(userInfo().homedir, ".foreman") },
-    ]) {
+    // `{}` alone is guarded under vitest (FRM_NO_DEFAULT_HOME): the default home only by name here.
+    for (const env of [{ FRM_HOME: join(userInfo().homedir, ".foreman") }]) {
       const selected = hostSecrets(env, { keychain: { bin: shim.bin } });
       if (!selected.ok) throw new Error(selected.error.message);
       expect(selected.value.keychain).toEqual({
@@ -188,7 +186,14 @@ describe("hostSecrets: the Keychain belongs to its install", () => {
       });
       await selected.value.spawn.get("JIRA_API_TOKEN");
     }
-    expect(shim.calls().map(serviceOf)).toEqual(["foreman", "foreman"]);
+    expect(shim.calls().map(serviceOf)).toEqual(["foreman"]);
+  });
+
+  test("no home named, under the test guard: never the live install's service", () => {
+    const selected = hostSecrets({});
+    if (!selected.ok) throw new Error(selected.error.message);
+    expect(selected.value.keychain?.owner).toBe(false);
+    expect(selected.value.keychain?.service).not.toBe("foreman");
   });
 
   test("FRM_SECRET_<NAME> still wins, and security is never run", async () => {

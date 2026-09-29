@@ -78,6 +78,21 @@ test("re-registration refreshes the runner but keeps conformance_* and enabled",
   });
 });
 
+test("re-registering with another kind rewrites it: a job runner registered as script before an earlier change becomes job", async () => {
+  const job: NewRunner = { ...runner, id: "a-job", adapter: "a-job" };
+  const kindOf = () =>
+    raw.prepare("SELECT kind FROM runners WHERE id = ?").get(job.id);
+  unwrap(await upsertRegistration(t.db, { runner: job, models: [] }));
+  expect(kindOf()).toEqual({ kind: "script" });
+  unwrap(
+    await upsertRegistration(t.db, {
+      runner: { ...job, kind: "job" },
+      models: [],
+    }),
+  );
+  expect(kindOf()).toEqual({ kind: "job" });
+});
+
 test("absent models are retired, never deleted, and tiers can swap", async () => {
   await clock.advance(1_000);
   unwrap(

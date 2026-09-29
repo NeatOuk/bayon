@@ -8,10 +8,131 @@ a secret it wasn't given, and can't spend past a budget you set.
 A supervisor daemon owns the agent processes, SQLite is the system of record, a NestJS API serves
 REST, WebSocket and an MCP server for the agents, and a React GUI sits on top.
 
-This README is the overview and the reference: what Bayon is, where it stands, how to set it up, and
-what to reach for once it's running.
+The [Quick start](#quick-start) below gets you from a fresh Mac to a running GUI and a first ticket.
+The rest of this README is the overview and the reference.
 
 - Working on the code: read [CLAUDE.md](CLAUDE.md) first.
+
+## Quick start
+
+On macOS. Copy the commands top to bottom.
+
+### 1. Prerequisites
+
+- **macOS.** Linux works too, with a different secret store (see [Platforms](#platforms)).
+- **Node 22.13 or newer** (`node -v`).
+- **pnpm 11.26**, the version in `package.json`. Run `corepack enable` once and Node provides it.
+- **git** and the **Xcode command-line tools** (`xcode-select --install`): two dependencies compile
+  native code.
+- **tmux** (`brew install tmux`), to watch or take over an agent's terminal.
+- **For real agents, a Claude login:** a subscription is enough (`claude setup-token` makes a token).
+  The free `fixture` runner needs no login, and is enough to try everything below.
+
+### 2. Install and build
+
+```bash
+git clone <repo-url> bayon
+cd bayon
+corepack enable
+pnpm i
+pnpm -w build
+```
+
+Every command below runs from this folder.
+
+### 3. One-time setup
+
+```bash
+pnpm frm init
+```
+
+This creates the install's home, `~/.foreman`, stores a new API token in the Keychain (it's never
+printed), and writes the install's ports to `~/.foreman/install.json`: 3010 for the API and 5173 for
+the GUI. Running it again changes nothing. `frm` uses `~/.foreman` unless `FRM_HOME` says otherwise.
+
+For real Claude agents, store your login once. Copy the token `claude setup-token` prints, then paste
+it at the prompt:
+
+```bash
+claude setup-token
+security add-generic-password -s foreman -a CLAUDE_CODE_OAUTH_TOKEN -w
+```
+
+Optional: `pnpm frm backup init-key` turns on nightly encrypted backups.
+
+### 4. Start
+
+```bash
+pnpm start
+```
+
+This runs the database migrations, then starts the supervisor, the API and the GUI, and prints:
+
+```
+home    ~/.foreman
+GUI     http://localhost:5173
+logs    ~/.foreman/logs/{supervisor,api,web}.log
+Ctrl-C stops all three
+```
+
+If you'd rather run each process in its own terminal, start them in this order, from the clone (the
+API refuses to start until the supervisor has migrated the database). Each needs `FRM_HOME` set; none
+needs the token, which each reads from the Keychain. Their logs then go to their terminals:
+
+```bash
+FRM_HOME=~/.foreman pnpm --filter @bayon/supervisor start   # terminal 1
+FRM_HOME=~/.foreman pnpm --filter @bayon/api start          # terminal 2
+FRM_HOME=~/.foreman pnpm --filter @bayon/web dev            # terminal 3
+```
+
+### 5. Open the GUI
+
+Open <http://localhost:5173>. The **Fleet** page opens with **Needs you**, a checklist of what stands
+between you and a working install (a project first, then an uncertified runner, a missing builder or
+mission). Each item links to its fix. The next step clears them.
+
+### 6. Your first project and ticket
+
+1. **Create a project.** **Projects → New project**. Give it a git url (https or ssh), or a folder on
+   this Mac. For a folder, when you're in a browser on this Mac at `localhost`, the form offers
+   **Allow agents to use this folder**, and **Initialise this folder as a git repository** when the
+   folder is empty or has no commits. From a terminal, `pnpm frm roots add <folder> --yes` allows a
+   folder instead. Pick a **Runner** (`fixture` to try things out). The project gets a builder, a
+   reviewer and an orchestrator.
+2. **Certify its runner.** Bayon gives no work to a runner that hasn't passed its conformance suite.
+   On **Runners**, run conformance for the project's runner, or from a terminal:
+
+   ```bash
+   pnpm frm runner conformance fixture      # free, about a minute
+   pnpm frm runner conformance claude-sdk   # about $0.20 on your Claude login
+   ```
+
+   It certifies every model the project's agents use. `fixture` is a test script that does no real
+   work: its session goes idle after one turn, which is its expected end. Use a real runner for real
+   work.
+
+3. **File a ticket.** **Tickets → New ticket**, with your project picked under **Project**. It starts
+   in Backlog.
+4. **Start work.** The ticket page's next-step line offers **Start work** when a builder can take the
+   ticket. It prioritises the ticket and staffs the builder, each checked by the same rules as doing
+   it by hand. The line then reads "Starting a session for …" until the session is up, then shows
+   who holds the ticket and what it's doing.
+
+The orchestrator has no mission until you write one, in the project's **Orchestrator** tab. It can
+staff tickets without one, but a mission is how you tell it what matters.
+
+### 7. Stop, and find the logs
+
+Press **Ctrl-C** in the terminal running `pnpm start`. It stops the GUI, then the API, then the
+supervisor, waiting for each; the supervisor may take up to a minute if it is finishing a backup,
+and says so. Closing that terminal stops them the same way. Running agents are left alone, and the
+supervisor picks them up again the next time it starts, so no work is lost. To keep Bayon running
+after you close the terminal, run `pnpm start` inside tmux.
+
+Logs are in `~/.foreman/logs/`: `supervisor.log`, `api.log` and `web.log`, each started fresh by
+`pnpm start` with the previous run's kept as `.log.1`. If one process stops by itself, `pnpm start`
+stops the other two and prints the end of that process's log. `pnpm start` refuses to start on a
+home that is already running.
 
 ## How it fits together
 
@@ -100,7 +221,9 @@ Bayon builds its own tickets day to day.
 **How agents behave once they have work:**
 
 - The orchestrator wakes on a pulse (every 90 minutes by default), staffs tickets, and never does
-  ticket work itself.
+  ticket work itself. A pulse with nothing to act on is skipped at no cost, and a ticket still in
+  Backlog isn't something to act on: prioritise it, or use **Start work**, to put it in front of the
+  orchestrator.
 - A project's tickets are worked and reviewed only by that project's agents, which may run on
   different runners. Agents with no project step in only for a role the project has no agent for.
   If the project's own agents are busy, the ticket waits.
@@ -145,7 +268,7 @@ written to the database, a prompt, a log or a worktree.
 
 | Name                      | What                                                                         | Needed for      |
 | ------------------------- | ---------------------------------------------------------------------------- | --------------- |
-| `FRM_API_TOKEN`           | The bearer token the GUI and `frm` use to reach the API                      | everything      |
+| `FRM_API_TOKEN`           | The API's bearer; `pnpm frm init` creates it in this home's store, unprinted | everything      |
 | `CLAUDE_CODE_OAUTH_TOKEN` | From `claude setup-token`; or `ANTHROPIC_API_KEY` for a Console key          | `claude-sdk`    |
 | `CODEX_API_KEY`           | An OpenAI API key                                                            | `codex-exec`    |
 | `CODEX_AUTH_JSON`         | Alternatively, the `auth.json` that `codex login` writes, as compact JSON    | `codex-exec`    |
@@ -177,41 +300,52 @@ Most settings are in GUI → Settings, and every change is audited. A few securi
 be changed from the shell, never from the GUI or the REST API:
 
 ```bash
-FRM_HOME=~/.foreman pnpm frm settings get [key]
-FRM_HOME=~/.foreman pnpm frm settings set <key> <value> --yes
+pnpm frm settings get [key]
+pnpm frm settings set <key> <value> --yes
 ```
+
+`frm` uses `~/.foreman` unless `FRM_HOME` or `FRM_DB` says otherwise, and says so on stderr
+(`(using ~/.foreman)`). A mistyped command or option names the closest one; `pnpm frm <command>
+--help` shows that command's usage. If `frm` says its build is out of date, run `pnpm -w build`.
 
 | Shell-only setting            | What it does                                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `admission.require_certified` | Refuses any runner that hasn't passed conformance on its executor (default on).                         |
 | `executors.untrusted_roles`   | Roles that must run on an untrusted (container) executor; `frm executor add --untrusted-roles` sets it. |
 | `runners.login_in_place`      | `<runner-id>=<absolute path>`: use an operator's live login file. `none` revokes.                       |
-| `projects.local_roots`        | Folders the GUI's New project form may take a repo path from (default none). `none` revokes.            |
+| `projects.local_roots`        | Folders the GUI's New project form may take a repo path from (default none). Use `frm roots` below.     |
 
 `frm` isn't on your system path. Run it from the clone as `pnpm frm …`.
 
 ### Certification
 
-Admission refuses a runner that hasn't passed the §15 conformance suite on the executor it would run
-on. Run it with Bayon running:
+A session doesn't start on a runner that hasn't passed the conformance suite on the executor it would
+run on. Run it with Bayon running, with `FRM_HOME` set to the install to certify: `frm` reaches that
+home's own API with that home's own token, never another install's.
 
 ```bash
-export FRM_API_TOKEN=$(security find-generic-password -s foreman -a FRM_API_TOKEN -w)
 pnpm frm runner conformance fixture
-FRM_REAL_RUNNER=1 pnpm frm runner conformance claude-sdk
-FRM_REAL_RUNNER=1 pnpm frm runner conformance codex-exec
+pnpm frm runner conformance claude-sdk
+pnpm frm runner conformance codex-exec
 ```
 
-Each prints its report path and verdict, and exits 0 only when the pair is certified. A few tests
-read **N/A** when they don't apply to that runner. Certification lapses whenever a runner's version,
-capabilities or image changes, or the suite itself changes (`SUITE_VERSION`), so run it again then.
-The Runners page in the GUI shows the state and can start a run. `--compression` runs the suite with
+A certificate holds for one model. With no `--model`, each command certifies every model of that
+runner that something uses: a project's agents, a project's step tiers or a role binding. It names
+each model and who uses it. On a runner that nothing uses yet, it certifies the runner's default
+(standard tier) model. `--model <id>` certifies just that one. Each run prints its report path and
+verdict, and the command exits 0 only when every model it ran is certified. A few tests read
+**N/A** when they don't apply to that runner. Certification lapses whenever a runner's version,
+capabilities or image changes, or the suite itself changes in an upgrade, so run it again then.
+The Runners page in the GUI shows the state and can start a run. It picks the model in use first,
+and says who uses it. When more than one model is in use, one button certifies them all. Bayon's
+own job runners (the exporter and the script checks) aren't agents, so they're never offered for
+certification. `--compression` runs the suite with
 context compression on (and its own test, 17): the certificate a project that compresses its
 context needs, kept beside the normal one and lapsed on its own when the compression rules change.
 
 ### Configuring projects
 
-`pnpm frm project add` creates everything one project needs. Start the supervisor once first: its
+`pnpm frm project add` creates everything one project needs. Start Bayon once first: the supervisor's
 boot registers the runners that profiles and agents name.
 
 ```bash
@@ -221,20 +355,31 @@ pnpm frm project add app --repo git@github.com:<org>/<repo>.git --runner claude-
 This creates a repo (mirror path under `$FRM_HOME/mirrors`, cloned on first use), one workspace, a
 build profile and a builder agent (`app-builder`). Unless you pass `--no-orchestrator`, it also
 creates an orchestrate profile and an orchestrator agent (`app-orchestrator`, default pulse policy,
-no mission; staff it with `POST /missions`). It refuses a name that already exists, and warns and
+no mission; write one in the project's Orchestrator tab, or with `POST /missions`). It refuses a name that already exists, and warns and
 prints the certify command when the (runner, executor) pair isn't certified; `--executor` defaults
 to `local`. `--dry-run` prints the rows it would write without touching any database. See
 `pnpm frm --help` for every flag.
 
-The GUI's **Projects → New project** does the same from a browser. It takes an https or ssh url, and a
-folder on this machine only inside one you have allowed from a shell, since the page can be
-reached from your network. A folder whose repo has submodules becomes one project, with each
+The GUI's **Projects → New project** does the same from a browser. It takes an https or ssh url, or a
+folder on this machine inside one you have allowed. The form checks a folder before it creates
+anything. In a browser on this machine, opened at `localhost`, a folder not allowed yet comes with
+**Allow agents to use this folder** (it adds the folder, or its parent, to the list and writes the
+change to the audit log). From any other machine the form shows the command to run here instead,
+since the page can be reached from your network. A folder that is empty or has no commits yet is
+offered **Initialise this folder as a git repository**: `git init` and one empty first commit, with
+none of your files added. A folder whose repo has submodules becomes one project, with each
 submodule checked out inside it at the commit the folder pins; each must be checked out in the
 folder already.
 
 ```bash
-FRM_HOME=~/.foreman pnpm frm settings set projects.local_roots "$HOME/src" --yes
+pnpm frm roots add "$HOME/src" --yes     # allow one more folder; the others stay
+pnpm frm roots list
+pnpm frm roots remove "$HOME/src" --yes
 ```
+
+`roots add` stores the folder's real path and refuses one that doesn't exist or isn't a directory;
+adding it twice changes nothing. Each change is audited, like `frm settings set`. `frm settings set
+projects.local_roots <a,b,…> --yes` still replaces the whole list at once.
 
 #### Agents and staffing
 
@@ -430,6 +575,28 @@ and cleanup only ever removes labelled objects, so a host shared with other stac
 `fixture`, `codex-exec` and `claude-sdk` all run in containers. To take an executor out of service,
 use `pnpm frm executor disable <id>`; admission then refuses it.
 
+### A second install
+
+Everything an install needs follows from its `FRM_HOME`, so a second one (a scratch copy, a trial of
+a new build) runs beside the first without touching it:
+
+```bash
+export FRM_HOME=~/bayon-scratch
+pnpm frm init     # its own token and ports
+pnpm start        # its supervisor, API and GUI, on those ports
+```
+
+`frm init` stores a new API token under that home's own Keychain service (never printed) and
+writes the home's ports to `$FRM_HOME/install.json`: the default home keeps 3010 and 5173, any other
+takes the first free pair after them (`--api-port` and `--web-port` choose). The API, the GUI, the
+supervisor's sessions and `frm` all read them from there; `FRM_API_HOST`, `FRM_API_PORT`,
+`FRM_WEB_PORT`, `FRM_API_URL` and `FRM_MCP_URL` still override. The file may bind the API to
+`127.0.0.1`, `::1` or `localhost` only (`0.0.0.0` or `::` with `"expose": true`); any other address
+comes from `FRM_API_HOST`. The stored token is read only when `FRM_HOME` (or `FRM_DB`) names the
+install, and never inside an agent's session. The GUI refuses to start when its port is taken,
+rather than quietly sharing it. A home whose path is too long for a unix socket (104 bytes) keeps
+its sockets in a private `frm-<hash>` folder in your account's temp directory instead.
+
 ### Checking a build
 
 ```bash
@@ -445,33 +612,36 @@ loaded is worth running again on its own before you believe it.
 
 ### Day to day
 
-| Task             | How                                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| Pause everything | Use the top bar's switch, or `pnpm frm pause` / `pnpm frm resume`. Turns in flight finish.            |
-| Find a screen    | The sidebar, or ⌘K (Ctrl K): screens, projects, agents, and a ticket by `#45` or its key.             |
-| Settings         | GUI → Settings for most; `pnpm frm settings` for the shell-only ones.                                 |
-| Audit trail      | GUI → Audit.                                                                                          |
-| Projects         | The sidebar's **Projects**; a project opens its own views in the sidebar, **All projects** goes back. |
-| Backups          | Nightly at 03:00 UTC, encrypted, newest 14 kept, in `$FRM_HOME/backups`.                              |
-| Back up now      | `pnpm frm backup`                                                                                     |
-| Restore          | `pnpm frm restore <file> --to <db-path>`; refused while a supervisor holds the target.                |
-| Logs             | `$FRM_HOME/logs/*.log`                                                                                |
+| Task             | How                                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pause everything | Use the top bar's switch, or `pnpm frm pause` / `pnpm frm resume`. Turns in flight finish.                                                   |
+| Find a screen    | The sidebar, or ⌘K (Ctrl K): screens, projects, agents, and a ticket by `#45` or its key.                                                    |
+| Settings         | GUI → Settings for most; `pnpm frm settings` for the shell-only ones.                                                                        |
+| Audit trail      | GUI → Audit.                                                                                                                                 |
+| Projects         | The sidebar's **Projects**; a project opens its own views in the sidebar, **All projects** goes back.                                        |
+| Backups          | Nightly at 03:00 UTC, encrypted, newest 14 kept, in `$FRM_HOME/backups`; off until `frm backup init-key`.                                    |
+| Back up now      | `pnpm frm backup`                                                                                                                            |
+| Restore          | `pnpm frm restore <file> --to <db-path>`; refused while a supervisor holds the target.                                                       |
+| Logs             | `$FRM_HOME/logs/*.log`. At a terminal the supervisor prints short lines, warnings up; `FRM_LOG_FORMAT=json` and `FRM_LOG_LEVEL` change that. |
 
 ### Troubleshooting
 
-| Symptom                                       | Fix                                                                                             |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `command not found: frm`                      | Run it as `pnpm frm …` from the clone.                                                          |
-| `fetch failed (is the API up?)`               | The API isn't running. Start it, then check `curl -s http://127.0.0.1:3010/api/v1/health`.      |
-| The API exits with `migrations pending`       | Run `pnpm --filter @bayon/db migrate:up`, or start the supervisor first.                        |
-| A spawn is refused as uncertified             | Certify that runner on that executor again ([Certification](#certification)).                   |
-| Sessions stay queued with `disk`              | Free disk space, or lower `admission.disk_min_free_pct` in Settings.                            |
-| Every `codex-exec` test fails `runner:failed` | The stored ChatGPT login is stale. Run `codex exec "hi"` to refresh it, then store it again.    |
-| The GUI answers 401 from another machine      | Its address must be in `FRM_WEB_ORIGINS` exactly: `http://<ip>:5173`, no trailing slash.        |
-| `frm pause` says the API didn't answer        | It falls back to writing `$FRM_DB` directly; the change is audited either way.                  |
-| An executor shows unhealthy after re-imaging  | Restart the supervisor, which recreates the gateway.                                            |
-| `model X not served by <host>`                | The provider dropped or renamed that model. Pull it again, or point the model at one it serves. |
-| A runner update shows in Needs You            | A new SDK or CLI is out. Upgrading is a code change: bump the pin, rebuild, re-certify.         |
+| Symptom                                            | Fix                                                                                                       |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `command not found: frm`                           | Run it as `pnpm frm …` from the clone.                                                                    |
+| `this frm build is out of date`                    | The sources changed since the last build. Run `pnpm -w build`.                                            |
+| `fetch failed (is the API up?)`                    | The API isn't running. Run `pnpm start`, then check `curl -s http://127.0.0.1:3010/api/v1/health`.        |
+| The API exits with `The database needs an upgrade` | Use `pnpm start`, which migrates first; or start the supervisor before the API.                           |
+| A spawn is refused as uncertified                  | Certify that runner on that executor again ([Certification](#certification)).                             |
+| Sessions stay queued with `disk`                   | Free disk space, or lower `admission.disk_min_free_pct` in Settings.                                      |
+| Every `codex-exec` test fails `runner:failed`      | The stored ChatGPT login is stale. Run `codex exec "hi"` to refresh it, then store it again.              |
+| `the GUI's port 5173 is already taken`             | Another install (or server) holds it. Stop it, or give this home its own: `pnpm frm init --web-port <n>`. |
+| `FRM_API_TOKEN is required`                        | Run `pnpm frm init` for this `FRM_HOME`: it stores a token in the home's own Keychain service.            |
+| The GUI answers 401 from another machine           | Its address must be in `FRM_WEB_ORIGINS` exactly: `http://<ip>:5173`, no trailing slash.                  |
+| `frm pause` says the API didn't answer             | It falls back to writing `$FRM_DB` directly; the change is audited either way.                            |
+| An executor shows unhealthy after re-imaging       | Restart the supervisor, which recreates the gateway.                                                      |
+| `model X not served by <host>`                     | The provider dropped or renamed that model. Pull it again, or point the model at one it serves.           |
+| A runner update shows in Needs You                 | A new SDK or CLI is out. Upgrading is a code change: bump the pin, rebuild, re-certify.                   |
 
 ## License
 

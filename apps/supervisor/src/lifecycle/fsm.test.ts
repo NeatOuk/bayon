@@ -2,6 +2,7 @@
 // from outside its from-set is a `conflict` that changes nothing; and a stop racing a run's
 // terminal ends right both ways, on FakeExecutor with the in-process fixture. A FakeClock drives
 // time; cross-task waits are deadlines, never a sleep.
+import { LITERAL_POLICY } from "./remote-policy.js";
 import { FakeClock, SessionState } from "@bayon/core";
 import {
   getEventsSince,
@@ -228,6 +229,7 @@ async function edgeDb(sessions: readonly (readonly [string, SessionState])[]) {
     adapters: new Map(),
     ingest,
     secrets: envSecrets({}),
+    remote: LITERAL_POLICY,
     settings: DEFAULT_SETTINGS,
     path: "/usr/bin:/bin",
     mcpUrl: "http://127.0.0.1:9/mcp",

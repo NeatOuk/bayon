@@ -23,7 +23,10 @@ export { setExecutorEnabledFromCli } from "./repos/executor-enabled.js";
 // `frm settings set`: one governed setting — the GUI's whitelist and the shell-only
 // security controls — checked as PUT /settings checks it, audited with via 'frm'.
 export type { SettingWrite } from "./repos/setting-set.js";
-export { setSettingFromCli } from "./repos/setting-set.js";
+export {
+  setSettingFromCli,
+  updateSettingFromCli,
+} from "./repos/setting-set.js";
 // `frm agent set`: an existing agent's profile, enabled and max_concurrency, audited.
 export type {
   AgentChange,

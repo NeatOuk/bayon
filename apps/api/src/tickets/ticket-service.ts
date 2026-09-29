@@ -213,7 +213,9 @@ export class TicketService {
     return ok({
       ticket: view.value,
       transitions: allowedTransitions({ ticket: ticket.value, actor, facts }),
-      next_step: next.value,
+      next_step: next.value.step,
+      holder: next.value.holder,
+      reviewing: next.value.reviewing,
       events: events.value,
       ...extras.value,
     });
@@ -234,12 +236,13 @@ export class TicketService {
       ...lawFacts(snapshot.value, await loadGateSettings(this.#deps.db)),
       diff: { state: "deferred" } as const,
     };
-    return nextStepOf(
+    const next = await nextStepOf(
       this.#deps.db,
       snapshot.value.ticket,
       ticket.value,
       facts,
     );
+    return next.ok ? ok(next.value.step) : next;
   }
 
   async events(

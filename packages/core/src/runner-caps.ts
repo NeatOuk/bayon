@@ -25,3 +25,14 @@ export const RunnerCaps = z.object({
   subagents: z.boolean(),
 });
 export type RunnerCaps = z.infer<typeof RunnerCaps>;
+
+/**
+ * The runner kind the supervisor's own jobs register (the exporter and the script gates):
+ * a fixed program, not an agent. §15's suite judges a model's behaviour and has nothing to say about
+ * one, so a job runner is never offered to certify, staff or pick. A registration fact, never an id.
+ */
+export const JOB_RUNNER_KIND = "job";
+
+/** A runner an agent can run on: any kind but a job's. */
+export const isAgentRunner = (runner: { readonly kind: string }): boolean =>
+  runner.kind !== JOB_RUNNER_KIND;

@@ -341,11 +341,13 @@ test("@bayon/db/api exports the API's writers, its command reads, and the fleet 
   expect(Object.keys(api).toSorted()).toEqual([
     "DAILY_CAP_KEY",
     "ERRORED_WITHIN_MS",
+    "LOCAL_ROOTS_VIA_GUI",
     "NOTIFY_CONFIG_ACTION",
     "PHASE_CHANGE",
     "STALE_AFTER_MS",
     "acceptHandoff",
     "ackAttention",
+    "addLocalRoot",
     "answerHumanRequest",
     "answerStaffProposal",
     "appendAudit",

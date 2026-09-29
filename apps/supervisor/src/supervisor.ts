@@ -3,10 +3,12 @@
 // runs it all in reverse and kills no child: pipe-bound runners end on stdin EOF when this
 // process exits and are adopted on the next boot (amendment 2).
 import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { err, ok, type Clock, type FrmError, type Result } from "@bayon/core";
 import { getSettings, openDb, pulseIdForSession, type Db } from "@bayon/db";
 import { migrateUp } from "@bayon/db/supervisor";
 import type { SessionSpawnPayload } from "@bayon/proto";
+import { ensureSocketDir } from "@bayon/executors";
 import { registrations } from "@bayon/runners";
 import type { Logger } from "pino";
 import { z } from "zod";
@@ -167,6 +169,10 @@ export async function startSupervisor(
       retryable: false,
     });
   }
+  // A home too long for its sockets keeps them in a short private dir: this user's
+  // own, 0700, or the supervisor refuses rather than listen where someone else could.
+  const sockets = ensureSocketDir(dirname(path), o.home);
+  if (!sockets.ok) return sockets;
   // Never inside one of this home's own sessions (MEDIUM-2): its orphan scan must never
   // find the supervisor's own ancestry among its orphans.
   if (process.env["FRM_HOME_TAG"] === homeTag(o.home)) {

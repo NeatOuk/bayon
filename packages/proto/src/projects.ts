@@ -1,4 +1,4 @@
-import { NO_STEP_TIERS, StepTiers } from "@bayon/core";
+import { NO_STEP_TIERS, RepoReachOutcome, StepTiers } from "@bayon/core";
 import { z } from "zod";
 import {
   DeliveryConfig,
@@ -69,6 +69,27 @@ export const ProjectCreated = z.object({
 });
 export type ProjectCreated = z.infer<typeof ProjectCreated>;
 
+/** `POST /projects/repo-check`: the URL New project is about to use, and its base. */
+export const RepoCheckRequest = z.strictObject({
+  repo_url: z.string().min(1).max(2_000),
+  base_branch: z.string().min(1).max(200).optional(),
+});
+export type RepoCheckRequest = z.infer<typeof RepoCheckRequest>;
+
+/**
+ * What the check found, in plain words. `ok`: a project on this URL (and base) can be
+ * created. `outcome` null: the supervisor did not answer in time, so nothing was checked. `command`:
+ * the one command that fixes it, when there is one (storing a forge token, trusting a host key).
+ */
+export const RepoCheckView = z.object({
+  ok: z.boolean(),
+  outcome: RepoReachOutcome.nullable(),
+  message: z.string(),
+  default_branch: z.string().nullable(),
+  command: z.string().nullable(),
+});
+export type RepoCheckView = z.infer<typeof RepoCheckView>;
+
 /** `GET /projects`: a project is a workspace, with its repos, agents and open tickets. */
 export const ProjectRepoView = z.object({
   id: z.string(),
@@ -96,6 +117,8 @@ export const ProjectAgentView = z.object({
   model: z.string().nullable().default(null),
   /** That model's row id, for its certification; null with `model`. */
   model_id: z.string().nullable().default(null),
+  /** It has a mission (`agents.mission_id`): an orchestrator without one is not ready. */
+  has_mission: z.boolean().default(false),
 });
 export type ProjectAgentView = z.infer<typeof ProjectAgentView>;
 
@@ -107,6 +130,13 @@ export const ProjectView = z.object({
   agents: z.array(ProjectAgentView),
   /** Tickets not done or rejected. */
   open_tickets: z.int().nonnegative(),
+  /**
+   * A builder can take its tickets: staffing's own pick with every slot free — its own
+   * enabled builder, or while it has none, a fleet builder on the builder binding's runners.
+   */
+  has_builder: z.boolean().default(false),
+  /** An enabled reviewer can review its work: its own, or the fleet's while it has none. */
+  has_reviewer: z.boolean().default(false),
   /** Paused: nothing new starts in it until it is resumed; other projects run on. */
   paused: z.boolean(),
   /**

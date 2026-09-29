@@ -63,7 +63,7 @@ test("a failed read says so", async () => {
   renderWithProviders(<InboxScreen />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The inbox is unavailable")).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
 });
 
 test("an answer posts, closes the dialog and refetches: the request moves to answered", async () => {

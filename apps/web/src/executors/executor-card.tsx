@@ -35,10 +35,10 @@ export function ExecutorCard({
       {!executor.enabled && (
         <p className="text-sm">
           {
-            "Out of service: admission refuses new sessions here, and any still running finish where they are. Its certifications are kept. Put it back with "
+            "Out of service: no new session starts here, and any still running finish where they are. Its certifications are kept. To put it back in service, run "
           }
           <span className="font-mono">{`frm executor enable ${executor.id}`}</span>
-          {" — a config row changes only from a shell (§9.5)."}
+          {" in a shell on the host."}
         </p>
       )}
       <p className="text-xs text-muted-foreground">

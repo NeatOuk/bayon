@@ -563,3 +563,78 @@ test("an open runner update appears on GET /runners and GET /fleet, and the dism
   const fleetAfter = Fleet.parse(await (await call("/fleet")).json());
   expect(fleetAfter.runner_updates).toEqual([]);
 });
+
+// A new project's agents run their profile's tier with no role binding and no step tier:
+// GET /runners counts each enabled agent's model as a use, labelled with the project and the agent,
+// so `frm runner conformance <runner>` and the GUI default to it. A disabled agent's counts not.
+test("an enabled agent's model is a use of it, labelled with its project; a disabled agent's is not", async () => {
+  unwrap(
+    await seedRows(t.db, {
+      profiles: [
+        {
+          id: "P-OTHER",
+          name: "P-OTHER",
+          runner_id: "other",
+          model_tier: "cheap",
+          version: 1,
+          hash: "h",
+          created_at: 0,
+        },
+      ],
+      workspaces: [{ id: "demo", name: "demo", kind: "single" }],
+      agents: [
+        {
+          id: "demo-b",
+          name: "demo-builder-1",
+          kind: "builder",
+          runner_id: "other",
+          workspace_id: "demo",
+          profile_id: "P-OTHER",
+          created_at: 0,
+        },
+        {
+          id: "demo-off",
+          name: "demo-builder-2",
+          kind: "builder",
+          runner_id: "other",
+          workspace_id: "demo",
+          profile_id: "P-OTHER",
+          enabled: 0,
+          created_at: 0,
+        },
+      ],
+    }),
+  );
+  const res = await call("/runners");
+  expect(res.status).toBe(200);
+  const other = RunnersView.parse(await res.json()).runners.find(
+    (r) => r.id === "other",
+  );
+  expect(other?.models.map((m) => [m.id, m.bound_roles])).toEqual([
+    ["other.cheap", ["demo · demo-builder-1 agent"]],
+  ]);
+});
+
+// A job runner (the supervisor's own exporter or script gate) is not an agent: §15 has nothing to
+// say about a fixed script, so a conformance run on one is refused by its registered kind.
+test("POST /runners/:id/conformance on a job runner is refused by its kind and inserts nothing", async () => {
+  unwrap(
+    await seedRows(t.db, {
+      runners: [
+        { id: "a-job", kind: "job", adapter: "a-job", caps_json: "{}" },
+      ],
+      models: [modelRow("a-job", "cheap")],
+    }),
+  );
+  const before = unwrap(await listCommands(t.db)).length;
+  const refused = await post("a-job", {
+    executor_id: SPINE_SEED.executorId,
+    model_id: "a-job.cheap",
+  });
+  expect(refused.status).toBe(400);
+  expect(ApiErrorBody.parse(await refused.json()).error).toMatchObject({
+    class: "validation",
+    message: expect.stringContaining("not an agent runner"),
+  });
+  expect(unwrap(await listCommands(t.db))).toHaveLength(before);
+});

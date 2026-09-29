@@ -217,7 +217,7 @@ test("a refused Add orchestrator shows the server's reason and keeps the form", 
     within(form).getByRole("button", { name: "Add orchestrator" }),
   );
   expect((await within(form).findByRole("alert")).textContent).toBe(
-    "Not added: conflict: project ws-bayon already has an enabled orchestrator, ws-bayon-orchestrator-1: disable it before adding another",
+    "Not added: project ws-bayon already has an enabled orchestrator, ws-bayon-orchestrator-1: disable it before adding another",
   );
   expect(callsTo(fetchMock, AGENTS, "POST")).toHaveLength(1);
   expect(screen.getByText("This project has no orchestrator")).toBeTruthy();
@@ -297,7 +297,7 @@ test("resuming a paused project that the server refuses keeps the dialog open wi
   expect(within(ask).getByText("Resume this project?")).toBeTruthy();
   await user.click(within(ask).getByRole("button", { name: "Resume project" }));
   expect((await within(ask).findByRole("alert")).textContent).toBe(
-    "Not resumed: not_found: project ws-bayon",
+    "Not resumed: project ws-bayon",
   );
   expect(callsTo(fetchMock, RESUME, "POST")).toHaveLength(1);
   // The server's state, never the one asked for: still paused.
@@ -344,7 +344,7 @@ test("require approval PATCHes the switch and shows the server's state; a refusa
   refuse = true;
   await user.click(toggle);
   expect((await within(group).findByRole("alert")).textContent).toBe(
-    "Not changed: conflict: the project is busy",
+    "Not changed: the project is busy",
   );
   expect(toggle.getAttribute("aria-checked")).toBe("true");
 });

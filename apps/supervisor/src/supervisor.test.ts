@@ -1,7 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -11,14 +13,19 @@ import {
 } from "node:fs";
 import { createConnection } from "node:net";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { FakeClock, err, ok } from "@bayon/core";
 import { getCommand, migrationStatus, readHeartbeat } from "@bayon/db";
 import { insertCommand, unwrap } from "@bayon/db/testing";
 import { pino } from "pino";
 import { afterAll, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { lockPath, socketPath } from "./paths.js";
+import {
+  lockPath,
+  relaySocketPath,
+  socketPath,
+  tmuxSocketPath,
+} from "./paths.js";
 import { startSupervisor } from "./supervisor.js";
 
 const T0 = 1_700_000_000_000;
@@ -233,8 +240,42 @@ test("a lock left by a supervisor that died is reclaimed, and released on shutdo
   expect(existsSync(lockPath(home))).toBe(false);
 });
 
-test("an FRM_HOME too long for the socket fails before opening the database", async () => {
-  const home = join(tempHome(), "h".repeat(100));
+test("an FRM_HOME of 150+ characters starts: its sockets go to a short private dir", async () => {
+  const home = join(tempHome(), "h".repeat(150));
+  const sockets = dirname(socketPath(home));
+  homes.push(sockets);
+  expect(home.length).toBeGreaterThan(150);
+  expect(sockets).toMatch(/\/frm-(\d+-)?[0-9a-f]{12}$/);
+  expect(sockets.startsWith(dirname(home))).toBe(false);
+  expect(dirname(relaySocketPath(home))).toBe(sockets);
+  expect(
+    dirname(dirname(tmuxSocketPath(home, "01ARZ3NDEKTSV4RRFFQ69G5FAV"))),
+  ).toBe(sockets);
+  const sup = unwrap(
+    await startSupervisor({
+      home,
+      clock: new FakeClock(T0),
+      log,
+      version: "0.1.0",
+    }),
+  );
+  try {
+    expect(lstatSync(sockets).mode & 0o777).toBe(0o700);
+    expect(lstatSync(socketPath(home)).isSocket()).toBe(true);
+    await wake(socketPath(home));
+    expect(existsSync(join(home, "foreman.db"))).toBe(true);
+  } finally {
+    await sup.shutdown();
+  }
+  expect(existsSync(socketPath(home))).toBe(false);
+});
+
+test("a socket dir someone else could open is refused before the database, in plain words", async () => {
+  const home = join(tempHome(), "o".repeat(150));
+  const sockets = dirname(socketPath(home));
+  homes.push(sockets);
+  mkdirSync(sockets, { mode: 0o700 });
+  chmodSync(sockets, 0o777);
   const started = await startSupervisor({
     home,
     clock: new FakeClock(T0),
@@ -242,5 +283,6 @@ test("an FRM_HOME too long for the socket fails before opening the database", as
     version: "0.1.0",
   });
   expect(started.ok ? null : started.error.class).toBe("validation");
+  expect(started.ok ? "" : started.error.message).toContain("chmod 700");
   expect(existsSync(join(home, "foreman.db"))).toBe(false);
 });

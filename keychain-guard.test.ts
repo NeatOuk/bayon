@@ -55,9 +55,13 @@ const RULES = [
     allowed: new Set([STORE]),
   },
   {
-    rule: "only the host store and frm backup init-key call putKeychainSecret()",
+    rule: "only the host store, frm backup init-key and frm init call putKeychainSecret()",
     banned: /\bputKeychainSecret\(/,
-    allowed: new Set([STORE, "tools/frm/src/backup.ts"]),
+    allowed: new Set([
+      STORE,
+      "tools/frm/src/backup.ts",
+      "tools/frm/src/init.ts",
+    ]),
   },
 ] as const;
 
@@ -75,6 +79,12 @@ test("frm backup writes only under the service hostSecrets derived, never a lite
   const backup = read("tools/frm/src/backup.ts");
   expect(backup).not.toMatch(/service:\s*["'`]/);
   expect(backup).toMatch(/host\.value\.keychain\?\.service/);
+});
+
+test("frm init writes only under the service hostSecrets derived, never a literal one", () => {
+  const init = read("tools/frm/src/init.ts");
+  expect(init).not.toMatch(/service:\s*["'`]/);
+  expect(init).toMatch(/host\.value\.keychain\?\.service/);
 });
 
 test("every hostSecrets caller passes no service: the store derives it", () => {

@@ -74,9 +74,7 @@ test("a refused attach shows the server's error", async () => {
   const user = userEvent.setup();
   renderWithProviders(<AttachButton session={idle} />);
   await user.click(screen.getByRole("button", { name: "Attach" }));
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "conflict: already held",
-  );
+  expect((await screen.findByRole("alert")).textContent).toBe("already held");
 });
 
 test("detach shows a confirm dialog before sending the command, and clears the persisted token", async () => {
@@ -166,7 +164,7 @@ describe("mid-turn: take over after this step, or now", () => {
       within(dialog).getByRole("button", { name: "Take over now" }),
     );
     expect((await within(dialog).findByRole("alert")).textContent).toBe(
-      "conflict: not now",
+      "not now",
     );
   });
 

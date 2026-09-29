@@ -36,7 +36,7 @@ import { insertAudit } from "./audit.js";
 
 /** Why `on_breach: 'kill'` is refused: §13.4's kill is deferred past M4. */
 export const KILL_DEFERRED =
-  "on_breach 'kill' is refused: it is deferred past M4 (§13.4)";
+  "a budget that kills sessions on breach is not built yet: choose warn or pause";
 
 /** PUT /budgets: one budget per scope and period, replaced whole. */
 export interface BudgetPut {

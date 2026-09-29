@@ -190,7 +190,8 @@ describe("a folder as the repo (projects.local_roots, §14)", () => {
   let root: string;
   let repo: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "frm-roots-"));
+    // Real: an allowed folder is used only when it is its own real path (macOS: /var → /private/var).
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "frm-roots-")));
     root = join(dir, "allowed");
     repo = join(root, "app");
     repoAt(repo);
@@ -218,9 +219,23 @@ describe("a folder as the repo (projects.local_roots, §14)", () => {
   };
 
   test("with no folder allowed, a path is refused and the refusal names the command", async () => {
-    expect(await refusal(repo)).toContain(
-      `frm settings set ${LOCAL_ROOTS_KEY}`,
-    );
+    expect(await refusal(repo)).toContain(`pnpm frm roots add ${repo} --yes`);
+  });
+
+  test("the refusal is plain words, with a command that appends rather than replaces", async () => {
+    await allow(join(dir, "elsewhere"));
+    const message = await refusal(repo);
+    expect(message).toMatch(/^Agents are not allowed to use /);
+    expect(message).not.toMatch(/§|BAYON-|settings set/);
+    expect(message).toContain(`pnpm frm roots add ${repo} --yes`);
+  });
+
+  test("a folder with no commit on its branch is refused in plain words", async () => {
+    git(join(root), "init", "-q", "-b", "main");
+    await allow(root);
+    const message = await refusal(root);
+    expect(message).toContain("has no commit on its current branch yet");
+    expect(message).not.toMatch(/§|BAYON-|fatal/);
   });
 
   test("a git repo inside an allowed folder is created, keeping its real path", async () => {
@@ -248,13 +263,10 @@ describe("a folder as the repo (projects.local_roots, §14)", () => {
     ).toBe(true);
   });
 
-  test("an allowed folder named through a symlink admits what is really inside it", async () => {
+  test("an allowed folder stored as a symlink is skipped: it could be re-pointed later", async () => {
     symlinkSync(root, join(dir, "alias"));
     await allow(join(dir, "alias"));
-    unwrap(await service.create({ ...REQUEST, repo_url: repo }));
-    expect(unwrap(await getRepo(t.db, "demo")).origin_url).toBe(
-      realpathSync(repo),
-    );
+    await refusal(repo);
   });
 
   test("on a case-insensitive disk, a path typed in another case is inside", async () => {
@@ -294,8 +306,8 @@ describe("a folder as the repo (projects.local_roots, §14)", () => {
     await allow(root);
     const missing = await refusal(join(root, "nope"));
     const outside = await refusal(join(dir, "elsewhere"));
-    expect(missing.replace(join(root, "nope"), "P")).toBe(
-      outside.replace(join(dir, "elsewhere"), "P"),
+    expect(missing.replaceAll(join(root, "nope"), "P")).toBe(
+      outside.replaceAll(join(dir, "elsewhere"), "P"),
     );
   });
 

@@ -155,7 +155,7 @@ test("a refused disable keeps the dialog open with the server's reason", async (
     within(dialog).getByRole("button", { name: "Disable bayon-builder" }),
   );
   expect((await within(dialog).findByRole("alert")).textContent).toBe(
-    "Not disabled: not_found: agent bayon-builder does not exist",
+    "Not disabled: agent bayon-builder does not exist",
   );
   expect(screen.getByRole("alertdialog")).toBe(dialog);
   expect(enabledSwitch("bayon-builder").getAttribute("aria-checked")).toBe(
@@ -192,7 +192,7 @@ test("an enable the server refuses says why beside the switch", async () => {
   const reviewer = await row("bayon-reviewer");
   await user.click(enabledSwitch("bayon-reviewer"));
   expect((await within(reviewer).findByRole("alert")).textContent).toBe(
-    "Not enabled: db_busy: the database is busy",
+    "Not enabled: the database is busy",
   );
   expect(enabledSwitch("bayon-reviewer").getAttribute("aria-checked")).toBe(
     "false",
@@ -228,7 +228,7 @@ test("max concurrency saves a whole number through PATCH, and refuses anything e
   expect((input as HTMLInputElement).value).toBe("3");
 });
 
-test("Add agent lists each runner with its certification on local; a disabled runner cannot be picked", async () => {
+test("Add agent lists each agent runner with its certification on local; a disabled runner cannot be picked; a job runner is not offered", async () => {
   renderIde("#/p/ws-bayon/agents", projectView({ agents: [BUILDER] }), {
     "/api/v1/runners": runnersView([
       runnerView({ id: "runner-a" }),
@@ -247,6 +247,8 @@ test("Add agent lists each runner with its certification on local; a disabled ru
         ],
       }),
       runnerView({ id: "runner-e", enabled: false }),
+      // The supervisor's own job: not an agent runner, never a choice.
+      runnerView({ id: "job-x", kind: "job" }),
     ]),
   });
   const user = userEvent.setup();
@@ -338,7 +340,7 @@ test("a refused add keeps the dialog open with the server's reason", async () =>
   await user.click(await screen.findByRole("option", { name: /^runner-a/ }));
   await user.click(within(dialog).getByRole("button", { name: "Add" }));
   expect((await within(dialog).findByRole("alert")).textContent).toBe(
-    "Not added: validation: runner runner-a is disabled",
+    "Not added: runner runner-a is disabled",
   );
   expect(screen.getByRole("dialog")).toBe(dialog);
 });
@@ -379,7 +381,7 @@ test("Add agent offers an orchestrator; a second enabled one is refused in the s
   await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
   expect((await within(dialog).findByRole("alert")).textContent).toBe(
-    "Not added: conflict: project ws-bayon already has an enabled orchestrator, bayon-orchestrator: disable it before adding another",
+    "Not added: project ws-bayon already has an enabled orchestrator, bayon-orchestrator: disable it before adding another",
   );
   expect(bodyOf(fetchMock, "/api/v1/projects/ws-bayon/agents", "POST")).toEqual(
     { kind: "orchestrator", runner_id: "runner-a" },

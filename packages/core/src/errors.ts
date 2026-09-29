@@ -10,6 +10,9 @@ export const ErrorClass = z.enum([
   "admission_refused",
   "over_budget", // pre-flight refused a prompt over its cap (§8.4); the cause carries the sizes
   "spawn_failed",
+  // The project's repo could not be read: not found, no access, an unknown ssh host
+  // key, or its host unreachable. The message says which in plain words, and what to do.
+  "repo_unreachable",
   "runner_exited_without_terminal",
   "runner_error", // a runner- or provider-side failure, e.g. an API error result
   "timeout",

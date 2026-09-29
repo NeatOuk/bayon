@@ -8,11 +8,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeClock, forgeTokenSecret } from "@bayon/core";
 import {
+  getHumanRequest,
   getSession,
+  getTicket,
+  listHandoffs,
   listSessionsInStates,
   listSessionWorktrees,
 } from "@bayon/db";
-import { seedRows, tempDb, unwrap } from "@bayon/db/testing";
+import { seedRows, tempDb, ticketRow, unwrap } from "@bayon/db/testing";
 import {
   GIT_TOKEN_ENV,
   GIT_TOKEN_HOST_ENV,
@@ -150,6 +153,31 @@ describe("the mirror's reads from a private https origin", () => {
     expect(JSON.stringify(logged)).not.toContain(TOKEN);
   });
 
+  test("a first clone from a host the policy refuses never runs git, and says why (review M1, M2)", async () => {
+    const w = world();
+    const ctx = ctxOf(w.forge.path);
+    for (const origin of [
+      "https://10.0.0.5/acme/private.git",
+      "https://169.254.169.254/x.git",
+      "http://github.com/acme/private.git",
+    ]) {
+      const refused = await ensureMirror(
+        ctx,
+        repoOf(w.mirror, origin),
+        new AbortController().signal,
+      );
+      expect(refused).toMatchObject({
+        ok: false,
+        error: {
+          class: "repo_unreachable",
+          retryable: false,
+          cause: { outcome: "refused" },
+        },
+      });
+    }
+    expect(w.forge.calls()).toEqual([]);
+  });
+
   test("the base fetch through the executor is offered the token; without it, it fails and names no token", async () => {
     const w = world();
     const ctx = ctxOf(w.forge.path);
@@ -175,6 +203,8 @@ describe("the mirror's reads from a private https origin", () => {
     );
     expect(bare.ok).toBe(false);
     if (!bare.ok) {
+      // Access gone after the mirror was cloned: said as plainly as a failed first clone.
+      expect(bare.error.class).toBe("repo_unreachable");
       expect(bare.error.message).toContain("could not read Username");
       expect(bare.error.message).not.toContain(TOKEN);
     }
@@ -215,6 +245,7 @@ describe("a spawn whose repo's origin is a private https repository", () => {
           },
         ],
         workspaces: [{ id: "ws", name: "ws", kind: "single" }],
+        tickets: [ticketRow(1, { status: "staffed", workspace_id: "ws" })],
         workspace_repos: [
           {
             workspace_id: "ws",
@@ -246,10 +277,13 @@ describe("a spawn whose repo's origin is a private https repository", () => {
       }
       t.cleanup();
     });
-    const spawn = async (id: string) => {
+    const spawn = async (id: string, ticketId?: string) => {
       unwrap(
         await started.lifecycle.handlers.spawn.handle(
-          spawnPayload(id, { workspace_id: "ws" }),
+          spawnPayload(id, {
+            workspace_id: "ws",
+            ...(ticketId === undefined ? {} : { ticket_id: ticketId }),
+          }),
           CMD,
         ),
       );
@@ -279,9 +313,61 @@ describe("a spawn whose repo's origin is a private https repository", () => {
   test("without it: the spawn fails at the workspace step as in the field, and nothing names a token", async () => {
     const h = await setup({ origin: "forge", secret: false });
     const s = await h.spawn("B1");
-    expect(s).toMatchObject({ state: "exited", exit_reason: "error" });
+    expect(s).toMatchObject({
+      state: "exited",
+      exit_reason: "error",
+      error_class: "repo_unreachable",
+    });
     expect(s.error_message).toContain("could not read Username");
     expect(clonesAndFetches(h.w).some((c) => c.tokenInEnv)).toBe(false);
+  });
+
+  test("a clone that fails on a staffed ticket says why in plain words, on the session, the hand-off and the blocked ticket", async () => {
+    const h = await setup({ origin: "forge", secret: false });
+    const s = await h.spawn("D1", "ticket-1");
+    expect(s).toMatchObject({
+      state: "exited",
+      error_class: "repo_unreachable",
+    });
+    // The plain reason first, what to do, then git's own words.
+    expect(s.error_message).toMatch(
+      /^Repo repo: Bayon cannot read https:\/\/github\.com\/acme\/private\.git: the repository does not exist, or it is private and Bayon has no token for github\.com\./,
+    );
+    expect(s.error_message).toContain("FORGE_TOKEN_GITHUB");
+    expect(s.error_message).toContain("git said:");
+    // The ticket is blocked with a short reason and a request in Needs you; re-staffing would fail
+    // the same way, so nothing is retried until the operator fixes the repo and unblocks.
+    const ticket = unwrap(await getTicket(h.db, "ticket-1"));
+    expect(ticket.status).toBe("blocked");
+    expect(ticket.blocked_reason).toBe(
+      "repo repo cannot be read: not found, or no access",
+    );
+    const requestId = /human request (\S+)\)/.exec(
+      ticket.unblock_condition ?? "",
+    )?.[1];
+    const request = unwrap(await getHumanRequest(h.db, requestId ?? ""));
+    expect(request).toMatchObject({
+      kind: "repo_access",
+      ticket_id: "ticket-1",
+      session_id: "D1",
+    });
+    expect(request.question).toContain("FORGE_TOKEN_GITHUB");
+    // The degraded hand-off is what staffs a successor after the unblock; it says why too.
+    const handoffs = unwrap(
+      await listHandoffs(h.db, { ticketId: "ticket-1", limit: 5 }),
+    ).rows;
+    expect(handoffs).toHaveLength(1);
+    expect(handoffs[0]?.facts_json).toContain("Bayon cannot read");
+    for (const text of [
+      s.error_message,
+      ticket.blocked_reason,
+      request.question,
+      request.context_md,
+      handoffs[0]?.facts_json,
+      JSON.stringify(h.logs),
+    ]) {
+      expect(text ?? "").not.toContain(TOKEN);
+    }
   });
 
   test("a local-path origin is never offered the token, the store holding it or not", async () => {

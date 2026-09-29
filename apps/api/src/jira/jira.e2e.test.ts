@@ -627,7 +627,8 @@ test("a sync that throws is a typed 500, not an unhandled one: its jira.sync row
   expect(res.status).toBe(500);
   expect(errorOf(res.json)).toEqual({
     class: "internal",
-    message: "request failed: internal",
+    message:
+      "Something went wrong on the server: try again, and if it keeps failing, check the API's log.",
     retryable: false,
   });
   const view = ProjectJiraView.parse(

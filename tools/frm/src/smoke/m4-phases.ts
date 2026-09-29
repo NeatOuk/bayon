@@ -436,7 +436,7 @@ export async function m4(w: World): Promise<void> {
   for (const cycle of [1, 2]) await plugCycle(w, fleet, cycle);
   await sweepPhase(w);
   w.h.io.out(
-    `note  --m4: the plug cycle ran twice on ${SMOKE.executor}; the manual power-cut drill is written up in the design`,
+    `note  --m4: the plug cycle ran twice on ${SMOKE.executor}; the manual power-cut drill is run by hand, from its plan under docs/spikes`,
   );
   w.h.io.out(
     "note  --m4: S5 (a session on a container executor, reaped by label) is retired, not deferred: there is no docker host",

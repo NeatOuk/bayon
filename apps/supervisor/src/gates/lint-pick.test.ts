@@ -43,7 +43,7 @@ async function refusal(o: Parameters<typeof choose>[0]): Promise<string> {
 test("no adapter for the job: no_reviewer, naming the runner", async () => {
   const detail = await refusal({ adapters: NONE });
   expect(detail).toContain(LINT_RUNNER_ID);
-  expect(detail).toContain("no adapter");
+  expect(detail).toContain("which this supervisor does not have");
 });
 
 // §9.8's trust rule. The command is the *repo's* — `pnpm -w lint` resolves through a package.json
@@ -52,8 +52,8 @@ test("no adapter for the job: no_reviewer, naming the runner", async () => {
 test("a subject built on another executor is refused before any spawn", async () => {
   const detail = await refusal({ subjectExecutorId: "ctr-1" });
   expect(detail).toContain("ctr-1");
-  expect(detail).toContain("§9.8");
-  expect(detail).toContain("waive");
+  expect(detail).toContain("untrusted code outside its sandbox");
+  expect(detail).toContain("Waive");
 });
 
 // The reason gates.lint_check ships off: with it on and no agent row, every ticket stops in

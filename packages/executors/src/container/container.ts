@@ -308,7 +308,7 @@ export class ContainerExecutor implements Executor {
     return Promise.reject(
       frmError(
         "validation",
-        `executor ${this.id} has no pty (capabilities.pty = false): takeover (§12.5) runs on local`,
+        `executor ${this.id} has no terminal to take over: take over a session that runs on local`,
       ),
     );
   }

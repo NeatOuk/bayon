@@ -14,6 +14,7 @@ import {
   ok,
   type CiWait,
   type NextStepHolder,
+  type NextStepStarting,
   type Result,
   type WaitFacts,
 } from "@bayon/core";
@@ -32,6 +33,7 @@ import { failure } from "../errors.js";
 import { pausedIn } from "./fleet-control.js";
 import { openQuestionOn } from "./open-questions.js";
 import { ENDED_STATES } from "./sessions.js";
+import { couldStaff } from "./staff-pool.js";
 
 // Why a ticket waits: the facts core's nextStep and waitingOnYou read that are not the
 // laws' own. `listWaitFacts` is the board's one set-based pass — a row per ticket of the page, each
@@ -47,6 +49,14 @@ const INFRA_REASONS = Object.entries(FAILURE_CLASS).flatMap(([reason, cls]) =>
 );
 const list = (values: readonly string[]) =>
   sql.join(values.map((v) => sql.lit(v)));
+
+/**
+ * A `session.spawn` for ticket `t` the supervisor has not made a session of yet: the
+ * predicate staffing's `queuedSpawns` holds a slot by, alias `c`.
+ */
+const QUEUED_SPAWN = sql`SELECT 1 FROM commands c WHERE c.state IN ('pending','claimed')
+    AND c.type = 'session.spawn' AND json_extract(c.payload_json, '$.ticket_id') = t.id
+    AND NOT EXISTS (SELECT 1 FROM sessions qs WHERE qs.id = json_extract(c.payload_json, '$.session_id'))`;
 
 /** The current round of ticket `t` (023): the highest any of its gates carries. */
 const ROUND = sql`(SELECT max(m.round) FROM gates m WHERE m.ticket_id = t.id)`;
@@ -116,6 +126,9 @@ function sharedColumns(blocking: readonly string[], driftMax: number | null) {
       AND s.state IN (${list(LIVE_STATES)}) ORDER BY s.created_at DESC, s.id DESC LIMIT 1)`.as(
       "holder_state",
     ),
+    sql<number>`EXISTS (${QUEUED_SPAWN})`.as("spawn_queued"),
+    sql<number>`EXISTS (SELECT 1 FROM sessions rv WHERE rv.ticket_id = t.id AND rv.gate_id IS NOT NULL
+      AND rv.state IN (${list(LIVE_STATES)}))`.as("reviewer_live"),
     sql<number>`CASE WHEN t.status = 'split' THEN
       NOT EXISTS (SELECT 1 FROM tickets c WHERE c.parent_ticket_id = t.id
                     AND c.status NOT IN ('done','rejected','parked'))
@@ -220,6 +233,8 @@ interface SharedRow {
   readonly has_orchestrator: number;
   readonly project_paused: number;
   readonly holder_state: string | null;
+  readonly spawn_queued: number;
+  readonly reviewer_live: number;
   readonly split_closable: number;
   readonly running: number;
   readonly reviewer_awaited: number;
@@ -254,6 +269,8 @@ function waitFactsOf(
     open_questions: row.open_questions,
     proposal_open: row.proposal_open === 1,
     holder_state: row.holder_state,
+    spawn_queued: row.spawn_queued === 1,
+    reviewer_live: row.reviewer_live === 1,
     handoff_pending: row.handoff_pending === 1,
     has_orchestrator: row.has_orchestrator === 1,
     fleet_paused: fleetPaused,
@@ -305,11 +322,28 @@ export async function listWaitFacts(
   return found.ok ? found.value : found;
 }
 
+/** The ticket's holder, with its session: what the ticket page links to. */
+export interface TicketHolderFact extends NextStepHolder {
+  readonly session_id: string;
+}
+
+/** A live gate reviewer on the ticket: never its holder, but staffing counts it. */
+export interface TicketReviewingFact {
+  readonly agent: string;
+  readonly session_id: string;
+}
+
 /** What nextStep reads beside the laws' facts (which getTicketFacts reads). */
 export interface NextStepDbFacts {
   readonly openQuestions: number;
   readonly proposalOpen: boolean;
-  readonly holder: NextStepHolder | null;
+  readonly holder: TicketHolderFact | null;
+  /** The spawn staffing queued, before its session row exists. */
+  readonly starting: NextStepStarting | null;
+  /** A live reviewer session on it: staffing refuses while one is. */
+  readonly reviewing: TicketReviewingFact | null;
+  /** A builder staffing could pick for it (staff-pool.ts couldStaff). */
+  readonly hasBuilder: boolean;
   /** The ticket's running gates whose reviewer session is live. */
   readonly liveGateIds: readonly string[];
   readonly handoffPending: boolean;
@@ -353,13 +387,14 @@ const LiveState = SessionState.exclude([...ENDED_STATES]);
 function holderOf(
   ix: Internals,
   ticketId: string,
-): Result<NextStepHolder | null> {
+): Result<TicketHolderFact | null> {
   const row = first(
     ix,
     qb
       .selectFrom("sessions as s")
       .innerJoin("agents as a", "a.id", "s.agent_id")
-      .select(["a.name as agent", "s.state", "s.turns"])
+      .leftJoin("runners as r", "r.id", "s.runner_id")
+      .select(["s.id", "a.name as agent", "s.state", "s.turns", "r.kind"])
       .where("s.ticket_id", "=", ticketId)
       .where("s.gate_id", "is", null)
       .where("s.state", "in", LIVE_STATES)
@@ -370,8 +405,61 @@ function holderOf(
   if (row === undefined) return ok(null);
   const state = LiveState.safeParse(row.state);
   return state.success
-    ? ok({ agent: row.agent, state: state.data, turns: row.turns })
+    ? ok({
+        session_id: row.id,
+        agent: row.agent,
+        state: state.data,
+        turns: row.turns,
+        scripted: row.kind === "script",
+      })
     : err(failure("internal", `session state ${row.state} is not a live one`));
+}
+
+/** The agent of the ticket's newest queued spawn with no session row yet, or null. */
+function startingOf(ix: Internals, ticketId: string): NextStepStarting | null {
+  const row = first(
+    ix,
+    qb
+      .selectFrom("commands as c")
+      .innerJoin("agents as a", (join) =>
+        join.on(
+          sql<boolean>`a.id = json_extract(c.payload_json, '$.agent_id')`,
+        ),
+      )
+      .select("a.name as agent")
+      .where("c.type", "=", "session.spawn")
+      .where("c.state", "in", ["pending", "claimed"])
+      .where(
+        sql<boolean>`json_extract(c.payload_json, '$.ticket_id') = ${ticketId}`,
+      )
+      .where(
+        sql<boolean>`NOT EXISTS (SELECT 1 FROM sessions qs WHERE qs.id = json_extract(c.payload_json, '$.session_id'))`,
+      )
+      .orderBy("c.ts", "desc")
+      .limit(1),
+  );
+  return row === undefined ? null : { agent: row.agent };
+}
+
+/** A live reviewer session on the ticket, newest first: it holds staffing off. */
+function reviewingOf(
+  ix: Internals,
+  ticketId: string,
+): TicketReviewingFact | null {
+  const row = first(
+    ix,
+    qb
+      .selectFrom("sessions as s")
+      .innerJoin("agents as a", "a.id", "s.agent_id")
+      .select(["s.id", "a.name as agent"])
+      .where("s.ticket_id", "=", ticketId)
+      .where("s.gate_id", "is not", null)
+      .where("s.state", "in", LIVE_STATES)
+      .orderBy("s.created_at", "desc")
+      .orderBy("s.id", "desc")
+      .limit(1),
+  );
+  return row === undefined ? null : { agent: row.agent, session_id: row.id };
 }
 
 function gatherNext(
@@ -382,7 +470,7 @@ function gatherNext(
     ix,
     qb
       .selectFrom("tickets as t")
-      .select(["t.id"])
+      .select(["t.id", "t.workspace_id"])
       .select(sharedColumns(blockingSeverities(ix), driftRoundsMax(ix)))
       .where("t.id", "=", ticketId),
   );
@@ -418,6 +506,9 @@ function gatherNext(
     openQuestions: row.open_questions,
     proposalOpen: row.proposal_open === 1,
     holder: holder.value,
+    starting: startingOf(ix, ticketId),
+    reviewing: reviewingOf(ix, ticketId),
+    hasBuilder: couldStaff(ix, "builder", row.workspace_id),
     liveGateIds,
     handoffPending: row.handoff_pending === 1,
     parkNote: parked?.reason ?? null,

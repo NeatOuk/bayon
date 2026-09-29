@@ -21,6 +21,7 @@ import {
 import { builtinToolsFor, mcpMount } from "./mcp.js";
 import { modelSettingsOf } from "./model-settings.js";
 import { preflightStep } from "./preflight.js";
+import { blockForUnreadableRepo } from "./repo-block.js";
 import { attachProcess, stopProcess } from "./process.js";
 import type { RunRequest } from "./prompt.js";
 import {
@@ -318,4 +319,12 @@ async function unwind(ctx: Ctx, id: string, failed: FrmError): Promise<void> {
           error_message: error.message,
         },
   );
+  // After the end, so its degraded hand-off is there for the successor an unblock staffs.
+  if (!byStop) {
+    await blockForUnreadableRepo(ctx, {
+      ticketId: s.ok ? s.value.ticket_id : null,
+      sessionId: id,
+      error,
+    });
+  }
 }

@@ -9,14 +9,26 @@ import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, posix } from "node:path";
 import { err, ok, redactedConfigKey, type Result } from "@bayon/core";
 import type { RepoRow } from "@bayon/db";
+import { REMOTE_GIT_ENV } from "@bayon/executors";
 import { NO_GIT_AUTH, type GitAuth } from "../forge/credential.js";
 import type { Ctx } from "./context.js";
 import { frmError } from "./errors.js";
-import { failedGit, hostGitRun } from "./host-git.js";
+import { hostGitRun } from "./host-git.js";
 import { hardenMirrorConfig } from "./mirror-config.js";
+import { refusedRemote, repoReadFailure } from "./repo-failure.js";
+import {
+  LITERAL_POLICY,
+  guardRemote,
+  type RemotePolicy,
+} from "./remote-policy.js";
 
-/** What first use needs of the lifecycle: the git deadline, its clock, PATH and log. */
-export type MirrorCtx = Pick<Ctx, "settings" | "clock" | "path" | "log">;
+/**
+ * What first use needs of the lifecycle: the git deadline, its clock, PATH and log, and the remote
+ * policy a URL origin is read under (absent: the literal checks only).
+ */
+export type MirrorCtx = Pick<Ctx, "settings" | "clock" | "path" | "log"> & {
+  readonly remote?: RemotePolicy;
+};
 export type MirrorRepo = Pick<RepoRow, "id" | "origin_url" | "mirror_path">;
 
 /** The mirror was there already, or this call cloned it. */
@@ -155,6 +167,14 @@ async function cloneInPlace(
 ): Promise<Result<MirrorUse>> {
   const repoId = repo.id;
   const what = `git clone --bare of repo ${repoId}`;
+  // A URL origin is read under the remote policy, as New project's check read it (review M1, M2); a
+  // folder's own path (a folder project, §14's local roots) is a local clone and needs none.
+  const guarded = isAbsolute(url)
+    ? ok<readonly string[]>([])
+    : await guardRemote(ctx.remote ?? LITERAL_POLICY, url);
+  if (!guarded.ok) {
+    return err(refusedRemote(repoId, guarded.error.message));
+  }
   const parent = dirname(mirror);
   let tmp: string;
   try {
@@ -169,7 +189,16 @@ async function cloneInPlace(
       ),
     );
   }
-  const cloned = await gitClone(ctx, what, url, tmp, signal, auth);
+  const cloned = await gitClone(
+    ctx,
+    repo,
+    what,
+    url,
+    tmp,
+    signal,
+    auth,
+    guarded.value,
+  );
   // Hardened where it was cloned, before the rename: a *freshly cloned* mirror is never
   // at mirror_path with a config that has not been through the pass. That is all this ordering
   // buys, and the commit that introduced it claimed more. A mirror already on disk is hardened on
@@ -229,24 +258,48 @@ async function moveInto(
  */
 async function gitClone(
   ctx: MirrorCtx,
+  repo: MirrorRepo,
   what: string,
   url: string,
   dest: string,
   signal: AbortSignal,
   auth: GitAuth,
+  /** The transports allowed for a URL origin (`remoteProtocolFlags`); none for a local path. */
+  protocols: readonly string[],
 ): Promise<Result<void>> {
   // The credential's flags go before `clone`, so they hold for this run only: `git -c` is never
-  // written into the new mirror's config, and the token itself is only in git's env.
+  // written into the new mirror's config, and the token itself is only in git's env. ssh runs in
+  // batch mode, as the repo check before the project was created did.
   const ran = await hostGitRun(
     ctx,
-    [...auth.flags, "clone", "--bare", "--quiet", "--", url, dest],
+    [
+      ...protocols,
+      ...auth.flags,
+      "clone",
+      "--bare",
+      "--quiet",
+      "--",
+      url,
+      dest,
+    ],
     {
       what,
       signal,
       stdout: "ignore",
-      ...(auth.flags.length === 0 ? {} : { env: auth.env }),
+      env: { ...REMOTE_GIT_ENV, ...auth.env },
     },
   );
   if (!ran.ok) return ran;
-  return ran.value.code === 0 ? ok(undefined) : err(failedGit(what, ran.value));
+  if (ran.value.code === 0) return ok(undefined);
+  // Why, in plain words, when git's say it: the session and its ticket show this.
+  return err(
+    repoReadFailure({
+      repoId: repo.id,
+      url,
+      auth,
+      stderr: ran.value.stderr,
+      code: ran.value.code,
+      what,
+    }),
+  );
 }

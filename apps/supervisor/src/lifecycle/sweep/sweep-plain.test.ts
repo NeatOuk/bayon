@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { seedRows, tempDb, unwrap, type SeedRows } from "@bayon/db/testing";
 import { afterAll, describe, expect, test } from "vitest";
+import { markWorktreeRemoved } from "@bayon/db/supervisor";
 import { FORBIDDEN_TOKENS } from "./argv.js";
 import {
   HOUR,
@@ -325,6 +326,27 @@ describe("the sweep on real git: plain worktrees", { timeout: 60_000 }, () => {
     });
     expect(w.calls()).toEqual([]);
     expect(w.logs.some((l) => l.level === "error")).toBe(true);
+  });
+
+  test("a fresh home: no live worktree and no work/ yet, so work/ is made quietly", async () => {
+    const w = await world();
+    rmSync(join(w.home, "work"), { recursive: true, force: true });
+    expect((await w.pass()).aborted).toBeNull();
+    expect(statSync(join(w.home, "work")).isDirectory()).toBe(true);
+    expect(
+      w.logs.filter((l) => l.level === "error" || l.level === "warn"),
+    ).toEqual([]);
+  });
+
+  test("a home that had worktrees, all removed now: a missing work/ still aborts, nothing made", async () => {
+    const w = await world();
+    const r = await w.repo("app");
+    const wt = await w.worktree({ sid: "s-gone", repo: r, add: false });
+    const row = await w.row(wt.rowId);
+    unwrap(await markWorktreeRemoved(w.db, row));
+    rmSync(join(w.home, "work"), { recursive: true, force: true });
+    expect((await w.pass()).aborted).toContain("is missing");
+    expect(existsSync(join(w.home, "work"))).toBe(false);
   });
 
   test("M5: a row ended less than min_ended_ms ago waits, unflagged; then it goes", async () => {

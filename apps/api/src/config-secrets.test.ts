@@ -23,10 +23,14 @@ function put(value: string, mode = 0o440): void {
 }
 
 describe("loadConfig with the file store", () => {
-  test("reads the token from the file", () => {
+  test("reads the token from the file", async () => {
     put(TOKEN);
     expect(
-      loadConfig({ FRM_SECRET_STORE: "file", FRM_SECRETS_DIR: dir }),
+      await loadConfig({
+        FRM_HOME: dir,
+        FRM_SECRET_STORE: "file",
+        FRM_SECRETS_DIR: dir,
+      }),
     ).toEqual({
       ok: true,
       value: { token: TOKEN, host: API_DEFAULTS.host, port: API_DEFAULTS.port },
@@ -35,9 +39,10 @@ describe("loadConfig with the file store", () => {
 
   test.each(["FRM_API_TOKEN", "FRM_SECRET_X", "FRM_WEB_PASSWORD_HASH"])(
     "refuses %s in the environment, never echoing it",
-    (name) => {
+    async (name) => {
       put(TOKEN);
-      const result = loadConfig({
+      const result = await loadConfig({
+        FRM_HOME: dir,
         FRM_SECRET_STORE: "file",
         FRM_SECRETS_DIR: dir,
         [name]: TOKEN,
@@ -51,8 +56,9 @@ describe("loadConfig with the file store", () => {
     },
   );
 
-  test("a missing, open or short token file is refused without its content", () => {
-    const missing = loadConfig({
+  test("a missing, open or short token file is refused without its content", async () => {
+    const missing = await loadConfig({
+      FRM_HOME: dir,
       FRM_SECRET_STORE: "file",
       FRM_SECRETS_DIR: dir,
     });
@@ -61,17 +67,29 @@ describe("loadConfig with the file store", () => {
       error: { class: "validation" },
     });
     put(TOKEN, 0o644);
-    const open = loadConfig({ FRM_SECRET_STORE: "file", FRM_SECRETS_DIR: dir });
+    const open = await loadConfig({
+      FRM_HOME: dir,
+      FRM_SECRET_STORE: "file",
+      FRM_SECRETS_DIR: dir,
+    });
     expect(open.ok).toBe(false);
     expect(JSON.stringify(open)).not.toContain(TOKEN);
     rmSync(join(dir, "FRM_API_TOKEN"));
     put("short");
     expect(
-      loadConfig({ FRM_SECRET_STORE: "file", FRM_SECRETS_DIR: dir }).ok,
+      (
+        await loadConfig({
+          FRM_HOME: dir,
+          FRM_SECRET_STORE: "file",
+          FRM_SECRETS_DIR: dir,
+        })
+      ).ok,
     ).toBe(false);
   });
 
-  test("the Keychain mode (unset) still reads FRM_API_TOKEN from the environment", () => {
-    expect(loadConfig({ FRM_API_TOKEN: TOKEN }).ok).toBe(true);
+  test("the Keychain mode (unset) still reads FRM_API_TOKEN from the environment", async () => {
+    expect((await loadConfig({ FRM_HOME: dir, FRM_API_TOKEN: TOKEN })).ok).toBe(
+      true,
+    );
   });
 });

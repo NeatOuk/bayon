@@ -125,7 +125,7 @@ test("a refused POST keeps the dialog open with the server's reason; the state i
   const dialog = await screen.findByRole("alertdialog");
   await user.click(within(dialog).getByRole("button", { name: "Pause fleet" }));
   expect((await within(dialog).findByRole("alert")).textContent).toBe(
-    "Not paused: db_busy: the database is busy",
+    "Not paused: the database is busy",
   );
   expect(screen.getByRole("alertdialog")).toBe(dialog);
   // Behind the open modal its label is hidden too, so it has no name there: the one switch.

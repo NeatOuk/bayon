@@ -1,5 +1,9 @@
 import { err, ok, type Result } from "@bayon/core";
-import { readNamedSecret, secretStoreKind } from "@bayon/executors/secret-file";
+import {
+  installPorts,
+  readApiToken,
+  type ApiTokenOptions,
+} from "@bayon/executors/install";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 
@@ -14,7 +18,8 @@ export function loadDbPath(
     ? ok(path)
     : err({
         class: "validation",
-        message: "no database: set FRM_DB or FRM_HOME",
+        message:
+          "No database to open: set FRM_HOME (or FRM_DB) and start the API again.",
         retryable: false,
       });
 }
@@ -79,56 +84,49 @@ export const API_DEFAULTS = { host: "127.0.0.1", port: 3010 } as const;
 /** A bearer shorter than this is refused at boot. */
 export const MIN_TOKEN_LENGTH = 16;
 
+/** What a missing token tells the operator: the one command that makes one for this home. */
+export const NO_TOKEN_MESSAGE =
+  "FRM_API_TOKEN is required: run `pnpm frm init` to store one for this home, or set it";
+
 const ApiConfig = z.object({
   token: z
-    .string("FRM_API_TOKEN is required")
+    .string(NO_TOKEN_MESSAGE)
     .min(
       MIN_TOKEN_LENGTH,
       `FRM_API_TOKEN needs at least ${MIN_TOKEN_LENGTH} characters`,
     ),
-  host: z.string().min(1).default(API_DEFAULTS.host),
-  port: z.coerce
-    .number()
-    .pipe(z.int().min(0).max(65_535))
-    .default(API_DEFAULTS.port),
+  host: z.string().min(1),
+  port: z.int().min(0).max(65_535),
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 
-/**
- * The bearer: FRM_API_TOKEN from the environment, as on the Mac; with the file store on
- * (FRM_SECRET_STORE=file, the file FRM_API_TOKEN under FRM_SECRETS_DIR, and
- * a token (or any other secret) in the environment is refused.
- */
-function tokenFrom(
-  env: Readonly<Record<string, string | undefined>>,
-): Result<string | undefined> {
-  const kind = secretStoreKind(env);
-  if (!kind.ok) return kind;
-  return kind.value === "file"
-    ? readNamedSecret(env, "FRM_API_TOKEN")
-    : ok(env.FRM_API_TOKEN);
-}
+const invalid = (message: string): Result<never> =>
+  err({ class: "validation", message, retryable: false });
 
-/** Reads the token, FRM_API_HOST and FRM_API_PORT. Error messages never contain the token. */
-export function loadConfig(
+/** Each schema complaint on its own, without zod's bullet: they are written for the operator. */
+const issues = (error: z.ZodError): string =>
+  error.issues.map((issue) => issue.message).join("; ");
+
+/**
+ * The bearer, host and port. The bearer: FRM_API_TOKEN from the environment; else this home's own
+ * store — the Keychain under this home's service, which `frm init` fills, or with the
+ * file store on (FRM_SECRET_STORE=file) the file FRM_API_TOKEN under
+ * FRM_SECRETS_DIR, where a token (or any other secret) in the environment is refused. Host and
+ * port: FRM_API_HOST / FRM_API_PORT, else the home's install.json, else 127.0.0.1:3010.
+ * Error messages never contain the token.
+ */
+export async function loadConfig(
   env: Readonly<Record<string, string | undefined>>,
-): Result<ApiConfig> {
-  const token = tokenFrom(env);
-  if (!token.ok)
-    return err({
-      ...token.error,
-      message: `invalid API config: ${token.error.message}`,
-    });
+  o: ApiTokenOptions = {},
+): Promise<Result<ApiConfig>> {
+  const token = await readApiToken(env, o);
+  if (!token.ok) return invalid(token.error.message);
+  const ports = installPorts(env);
+  if (!ports.ok) return invalid(ports.error.message);
   const parsed = ApiConfig.safeParse({
     token: token.value,
-    host: env.FRM_API_HOST,
-    port: env.FRM_API_PORT,
+    host: ports.value.apiHost,
+    port: ports.value.apiPort,
   });
-  return parsed.success
-    ? ok(parsed.data)
-    : err({
-        class: "validation",
-        message: `invalid API config: ${z.prettifyError(parsed.error)}`,
-        retryable: false,
-      });
+  return parsed.success ? ok(parsed.data) : invalid(issues(parsed.error));
 }

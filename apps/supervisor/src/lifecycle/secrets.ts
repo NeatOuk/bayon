@@ -51,7 +51,7 @@ export async function resolveSecrets(
   return err(
     frmError(
       "validation",
-      `none of the secrets ${names} is in the secret store; if this runner's CLI is already logged in on this host, consent to using that login in place with \`frm settings set ${LOGIN_IN_PLACE_KEY} <runner-id>=<path> --yes\` (§14)`,
+      `none of the secrets ${names} is in the secret store; if this runner's CLI is already logged in on this host, consent to using that login in place with \`frm settings set ${LOGIN_IN_PLACE_KEY} <runner-id>=<path> --yes\``,
     ),
   );
 }

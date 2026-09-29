@@ -63,7 +63,7 @@ test("a refused hand-off shows the server's error and keeps the dialog", async (
   await user.click(screen.getByRole("button", { name: "Hand off" }));
   await user.click(screen.getByRole("button", { name: "Hand off now" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "conflict: the session is not running",
+    "the session is not running",
   );
   expect(screen.getByRole("dialog")).toBeTruthy();
 });

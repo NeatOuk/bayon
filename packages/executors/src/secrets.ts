@@ -22,9 +22,33 @@ export interface SecretStore {
   get(name: string): Promise<Result<string>>;
 }
 
+/** The cause a miss carries: the store answered, and it has no such secret. */
+const NOT_FOUND = { notFound: true } as const;
+
 // Names only: a value never reaches a message, a cause or a log.
 const missing = (name: string): Result<never> =>
-  err(frmError("validation", `secret ${name} is not in the secret store`));
+  err(
+    frmError("validation", `secret ${name} is not in the secret store`, {
+      cause: NOT_FOUND,
+    }),
+  );
+
+/**
+ * Whether an error is a plain miss (the store answered: no such secret), not a store that could
+ * not be read (a locked or timed-out Keychain, a broken file). Only a miss may read as "not set up".
+ */
+export function isSecretMissing(error: { readonly cause?: unknown }): boolean {
+  const cause = error.cause;
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "notFound" in cause &&
+    cause.notFound === true
+  );
+}
+
+/** What `security find-generic-password` exits with when the item does not exist. */
+const KEYCHAIN_NOT_FOUND = 44;
 
 /** `FRM_SECRET_<NAME>` in the process's own environment: CI and tests. */
 export const envSecrets = (
@@ -43,6 +67,8 @@ const KEYCHAIN_TIMEOUT_MS = 10_000;
 export interface KeychainOptions {
   /** The `security` binary; tests point it at a shim. */
   readonly bin?: string;
+  /** How long a read may wait (default 10 s); an emergency caller such as `frm pause` waits less. */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -59,11 +85,29 @@ export const keychainSecrets = (
       const { stdout } = await execFileAsync(
         o.bin ?? "security",
         ["find-generic-password", "-s", service, "-a", name, "-w"],
-        { timeout: KEYCHAIN_TIMEOUT_MS },
+        { timeout: o.timeoutMs ?? KEYCHAIN_TIMEOUT_MS },
       );
       return decodeKeychainValue(name, stdout.replace(/\n$/, ""));
-    } catch {
-      return missing(name);
+    } catch (e) {
+      // 44: the Keychain answered, no such item. Anything else (a locked Keychain's prompt timing
+      // out, a missing binary, a signal) is a store that could not be read, and says so.
+      const code =
+        typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
+      if (code === KEYCHAIN_NOT_FOUND) return missing(name);
+      const killed =
+        typeof e === "object" &&
+        e !== null &&
+        "killed" in e &&
+        e.killed === true;
+      return err(
+        frmError(
+          "internal",
+          killed
+            ? `the Keychain did not answer for ${name} (a locked Keychain waits for a password)`
+            : `the Keychain could not be read for ${name} (security exited ${String(code)})`,
+          { retryable: true },
+        ),
+      );
     }
   },
 });
@@ -128,9 +172,10 @@ export async function getSourced(
   const fromEnv = await stores.env.get(name);
   if (fromEnv.ok) return ok({ value: fromEnv.value, source: "env" });
   const fromHost = await stores.host.get(name);
+  // The host store's own error: a miss stays a miss, a store that could not be read says so.
   return fromHost.ok
     ? ok({ value: fromHost.value, source: stores.hostSource })
-    : missing(name);
+    : fromHost;
 }
 
 export interface HostSecrets {
@@ -152,7 +197,11 @@ export interface HostSecrets {
  */
 export function hostSecrets(
   env: Readonly<Record<string, string | undefined>>,
-  o: { readonly keychain?: KeychainOptions } = {},
+  o: {
+    readonly keychain?: KeychainOptions;
+    /** Tests only: the account's default home, so a temp home can stand in for it. */
+    readonly ownerHome?: string;
+  } = {},
 ): Result<HostSecrets> {
   const kind = secretStoreKind(env);
   if (!kind.ok) return kind;
@@ -169,7 +218,10 @@ export function hostSecrets(
       hostSource: "file",
     };
   } else {
-    keychain = keychainScope(env);
+    keychain =
+      o.ownerHome === undefined
+        ? keychainScope(env)
+        : keychainScope(env, o.ownerHome);
     stores = {
       env: envSecrets(env),
       host: keychainSecrets(keychain.service, o.keychain),

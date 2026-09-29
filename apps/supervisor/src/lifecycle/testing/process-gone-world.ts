@@ -265,11 +265,60 @@ export async function killMidRun(w: World, id: string): Promise<string> {
   return ref;
 }
 
-/** Advances the clock a grace at a time until `p` settles. */
-export async function driveUntil(w: World, p: Promise<unknown>): Promise<void> {
+/**
+ * Advances the clock a `step` at a time until `done` holds, and not once after: for a clock-bounded
+ * wait whose next step must not start while a real process event is still on its way.
+ */
+export async function advanceUntil(
+  w: World,
+  done: () => boolean | Promise<boolean>,
+  step: number = GRACE,
+): Promise<void> {
+  await vi.waitFor(async () => {
+    if (!(await done())) await w.clock.advance(step);
+    expect(await done()).toBe(true);
+  }, WAIT);
+}
+
+/** Advances the clock a step at a time until `msg` has been logged. */
+export const advanceUntilLogged = (
+  w: World,
+  msg: string,
+  step: number = GRACE,
+): Promise<void> => advanceUntil(w, () => msgs(w).includes(msg), step);
+
+/**
+ * Waits for `p` with the clock held: for what the lifecycle finishes on real events alone (a kill
+ * landing, an exit reported, a spawn), so no timer can fire first under load.
+ */
+export async function untilSettled(p: Promise<unknown>): Promise<void> {
+  let done = false;
+  const mark = (): void => {
+    done = true;
+  };
+  p.then(mark, mark);
+  await vi.waitFor(() => {
+    expect(done).toBe(true);
+  }, WAIT);
+  await p;
+}
+
+/** Waits, with the clock held, until `msg` has been logged. */
+export async function untilLogged(w: World, msg: string): Promise<void> {
+  await vi.waitFor(() => {
+    expect(msgs(w)).toContain(msg);
+  }, WAIT);
+}
+
+/** Advances the clock a step (a grace by default) at a time until `p` settles. */
+export async function driveUntil(
+  w: World,
+  p: Promise<unknown>,
+  step: number = GRACE,
+): Promise<void> {
   const done = p.then(() => true);
   await vi.waitFor(async () => {
-    await w.clock.advance(GRACE);
+    await w.clock.advance(step);
     expect(await Promise.race([done, Promise.resolve(false)])).toBe(true);
   }, WAIT);
 }

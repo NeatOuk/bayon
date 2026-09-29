@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { USAGE, parseCli } from "./cli.js";
+import { describe, expect, test } from "vitest";
+import { COMMANDS, USAGE, cliErrorText, parseCli } from "./cli.js";
 import { SMOKE_DEADLINE_MS } from "./smoke/budget.js";
 
 const failure = (argv: string[]) => {
@@ -143,17 +143,21 @@ test("the mode flags are separate smokes; --hang and --m1 need the fixture runne
 
 test("no command or --help asks for the usage", () => {
   expect(parseCli([])).toEqual({ ok: true, value: { command: "help" } });
-  expect(parseCli(["smoke", "-h"])).toEqual({
+  expect(parseCli(["--help"])).toEqual({
     ok: true,
     value: { command: "help" },
+  });
+  expect(parseCli(["smoke", "-h"])).toEqual({
+    ok: true,
+    value: { command: "help", topic: "smoke" },
   });
 });
 
 test("bad input is a validation error with the reason", () => {
-  expect(failure(["deploy"])).toMatchObject({
-    class: "validation",
-    message: "unknown command: deploy",
-  });
+  expect(failure(["deploy"])).toMatchObject({ class: "validation" });
+  expect(failure(["deploy"])?.message).toMatch(
+    /^frm: unknown command "deploy"/,
+  );
   expect(failure(["smoke", "--runner", "gpt"])?.message).toMatch(/runner/);
   expect(failure(["smoke", "--timeout", "soon"])?.message).toMatch(/timeoutMs/);
   expect(failure(["smoke", "--nope"])?.message).toMatch(/--nope/);
@@ -243,4 +247,108 @@ test("runner conformance refuses smoke flags and a missing runner; smoke refuses
   expect(failure(["smoke", "--executor", "local"])?.message).toMatch(
     /frm runner conformance/,
   );
+});
+
+describe("an unknown command or option names the closest one, never the whole manual", () => {
+  test("an unknown command: the closest, the command list, and where the full usage is", () => {
+    const message = failure(["setings", "set", "k", "v"])?.message ?? "";
+    const lines = message.split("\n");
+    expect(lines[0]).toBe(
+      'frm: unknown command "setings". Did you mean "settings"?',
+    );
+    expect(message).toContain("  roots ");
+    expect(message).toContain("  smoke ");
+    expect(lines.at(-1)).toBe("frm --help for the full usage");
+    // A command list, not the manual.
+    expect(lines.length).toBeLessThan(25);
+    expect(message).not.toContain("--m3");
+  });
+
+  test("an unknown command with nothing close says so without a guess", () => {
+    const message = failure(["deploy"])?.message ?? "";
+    expect(message.split("\n")[0]).toBe('frm: unknown command "deploy".');
+  });
+
+  test("frm help is the usage", () => {
+    expect(parseCli(["help"])).toEqual({
+      ok: true,
+      value: { command: "help" },
+    });
+  });
+
+  test("an unknown option on a known command: that command and its options only", () => {
+    const message =
+      failure(["settings", "set", "projects.local_roots", "/a", "--yez"])
+        ?.message ?? "";
+    expect(message.split("\n")).toEqual([
+      'frm settings: unknown option "--yez". Did you mean "--yes"?',
+      "frm settings options: --yes",
+      `usage: ${COMMANDS.settings?.line ?? ""}`,
+      "frm settings --help for more",
+    ]);
+  });
+
+  test("an unknown option with a value (--opt=value) and on a command with no options", () => {
+    expect(failure(["agent", "set", "b1", "--profil=p"])?.message).toMatch(
+      /^frm agent: unknown option "--profil". Did you mean "--profile"\?/,
+    );
+    expect(failure(["pause", "--force"])?.message.split("\n")[1]).toBe(
+      "frm pause takes no options",
+    );
+  });
+
+  test("an option a command refuses by name keeps its own reason", () => {
+    expect(
+      failure(["agent", "set", "b1", "--mission-id", "m"])?.message,
+    ).toMatch(/mission_id is set by the API/);
+  });
+
+  test("an option given to a command that does not take it is still refused by that command's own rule", () => {
+    // --to belongs to frm restore: frm backup's own message says so.
+    expect(failure(["backup", "--to", "/x"])?.message).toMatch(
+      /--to and --replace belong to frm restore/,
+    );
+  });
+
+  test("every option the table lists is one its command's parser knows", () => {
+    for (const [word, command] of Object.entries(COMMANDS)) {
+      for (const option of command.options) {
+        const message = failure([word, `--${option}`])?.message ?? "";
+        expect(message, `${word} --${option}`).not.toMatch(/unknown option/i);
+      }
+    }
+  });
+
+  test("a swapped pair is caught: --yse is --yes, rots is roots", () => {
+    expect(failure(["settings", "set", "k", "v", "--yse"])?.message).toMatch(
+      /^frm settings: unknown option "--yse". Did you mean "--yes"\?/,
+    );
+    expect(failure(["rots", "list"])?.message).toMatch(
+      /^frm: unknown command "rots". Did you mean "roots"\?/,
+    );
+  });
+
+  test("<command> --help is that command's usage", () => {
+    expect(parseCli(["roots", "--help"])).toEqual({
+      ok: true,
+      value: { command: "help", topic: "roots" },
+    });
+    expect(parseCli(["settings", "set", "-h"])).toEqual({
+      ok: true,
+      value: { command: "help", topic: "settings" },
+    });
+  });
+
+  test("the error text: a command's own message gets the frm prefix and one pointer", () => {
+    expect(cliErrorText("usage: frm pause | frm resume (no arguments)")).toBe(
+      "frm: usage: frm pause | frm resume (no arguments)\nfrm --help for the full usage",
+    );
+    const friendly = 'frm: unknown command "x".\nfrm --help for the full usage';
+    expect(cliErrorText(friendly)).toBe(friendly);
+  });
+
+  test("the usage names the default home and frm roots", () => {
+    expect(USAGE).toContain("~/.foreman");
+    expect(USAGE).toContain("frm roots add <path>");
+  });
 });

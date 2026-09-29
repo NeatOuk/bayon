@@ -136,3 +136,18 @@ describe("circuitVerdict", () => {
     expect(judge({ failures: [late, early] }).counted).toEqual([early, late]);
   });
 });
+
+test("a start that could not read its repo counts toward the circuit, retryable or not (L4)", () => {
+  // A host that stays unreachable is retryable and blocks nothing on its own; the retry storm counts
+  // only runner_error, so the circuit breaker is the cap that stops its re-staffing.
+  expect(
+    isTicketFailure(
+      failure({
+        kind: "start",
+        runId: null,
+        state: "exited",
+        errorClass: "repo_unreachable",
+      }),
+    ),
+  ).toBe(true);
+});

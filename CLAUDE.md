@@ -77,7 +77,7 @@ docs/spikes/        per-ticket plans written by agents (see How to work a ticket
    worktrees/qa/backups/deliveries/runner_updates (+ `tickets.pr_url` and `ticket_links`, its third
    ticket write beside blockTicket and advanceTicket); API writes tickets/gates/findings/missions
    (+ `agents.mission_id`)/messages/handoffs/knowledge/budgets/runner_update_dismissals; API inserts
-   `commands`, supervisor claims them. Never cross. `tools/frm` alone writes via `@bayon/db/operator`: config, backups.
+   `commands`, supervisor claims them. Never cross. `tools/frm` alone writes via `@bayon/db/operator`: config, backups (the API may only append a `projects.local_roots` folder for a browser on the host, §14).
 6. **All SQL lives in `packages/db`.** No query strings in apps. Migrations are forward-only numbered
    files; every migration has a test that runs it on an empty DB and on a seeded DB.
 7. **No compaction — hand off** (§7, §8.7). One unit of work per session.
@@ -163,7 +163,7 @@ FRM_HOME=… pnpm --filter @bayon/db migrate:up | migrate:down | migrate:status 
 FRM_HOME=… pnpm --filter @bayon/supervisor dev            # daemon: control socket + claimer
 FRM_HOME=… FRM_API_TOKEN=… pnpm --filter @bayon/api start  # REST /api/v1 + /ws
 FRM_API_TOKEN=… pnpm --filter @bayon/web dev               # :5173, proxies /api + /ws, adds the bearer
-FRM_HOME=… pnpm frm settings get [key] | set <key> <value> [--yes]  # shell-only: the one door to the security controls (the GUI shows them read-only); audited, security keys need --yes
+FRM_HOME=… pnpm frm settings get [key] | set <key> <value> [--yes]  # shell-only: the one door to the security controls (the GUI shows them read-only), except appending a local root from a browser on the host (POST /folders/allow); audited, security keys need --yes
 pnpm frm smoke [--hang] [--runner sdk]  # M0 acceptance; sdk needs FRM_REAL_RUNNER=1 + a key
 pnpm frm smoke --m1                     # M1 acceptance: ticket read/update/file over /mcp, laws, export
 pnpm frm smoke --m2                     # M2 acceptance: pulses staff one ticket through 3 hand-offs, no operator

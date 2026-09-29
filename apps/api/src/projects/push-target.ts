@@ -174,7 +174,7 @@ async function proposalFor(
           : "this repo was not created from a folder: its origin already is its remote.",
     };
   }
-  const allowed = await allowedLocalRepo(db, origin);
+  const allowed = await allowedLocalRepo(db, origin, git);
   if (!allowed.ok) return { detected: null, warning: allowed.error.message };
   const found = await detectPushUrl(git, allowed.value);
   return {

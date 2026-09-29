@@ -10,3 +10,7 @@ const path = process.env.PATH ?? "";
 if (path.split(delimiter)[0] !== TEST_BIN) {
   process.env.PATH = `${TEST_BIN}${delimiter}${path}`;
 }
+
+// No test, and no frm a test spawns, may fall back to the operator's default home (~/.foreman):
+// tools/frm/src/home.ts refuses the default while this is set.
+process.env.FRM_NO_DEFAULT_HOME = "1";

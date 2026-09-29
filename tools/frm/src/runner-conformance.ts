@@ -2,11 +2,19 @@
 // asks the running API for a runner.conformance command per model, waits while the supervisor runs
 // the §15 suite, then prints the report path and the verdict. Certification is per (runner,
 // executor, model, compression): without --model, every active model of the runner that a role
-// binding or a project's step tier runs is certified, one after another; with
+// binding, a project's step tier or an enabled agent runs is certified, one
+// after another — or, when nothing uses one yet, the runner's default model; with
 // --compression, each run has context compression on (test 17 too) and certifies the compression-on
 // certificate a project that compresses needs. Exit codes: 0 every run certified (passed_at set)
 // with no failed test, 1 anything else, 2 no token or the deadline.
-import { err, ok, type Clock, type FrmError, type Result } from "@bayon/core";
+import {
+  err,
+  isAgentRunner,
+  ok,
+  type Clock,
+  type FrmError,
+  type Result,
+} from "@bayon/core";
 import {
   ApiErrorBody,
   CommandView,
@@ -15,9 +23,10 @@ import {
   RunnersView,
 } from "@bayon/proto";
 import { z } from "zod";
+import type { KeychainOptions } from "@bayon/executors";
+import { NO_API_TOKEN, apiBaseOf, apiTokenOf } from "./api-access.js";
 import type { Fetch } from "./smoke/api-client.js";
 
-export const DEFAULT_API_URL = "http://127.0.0.1:3010";
 /** A live suite spends minutes; the fixture's takes under one. */
 export const CONFORMANCE_TIMEOUT_MS = 20 * 60_000;
 const POLL_MS = 1_000;
@@ -25,8 +34,7 @@ const POLL_MS = 1_000;
 export const ConformanceCliOptions = z.object({
   runnerId: z.string().min(1),
   executorId: z.string().min(1),
-  /** One models row of the runner. Absent: every active model of it a role binding or a project
-   * step tier runs. */
+  /** One models row of the runner. Absent: every active model of it in use, else its default. */
   modelId: z.string().min(1).optional(),
   /** With context compression on (spec M12): the compression-on certificate. */
   compression: z.boolean().default(false),
@@ -42,6 +50,8 @@ export interface ConformanceIo {
   readonly out: (line: string) => void;
   readonly fetch?: Fetch;
   readonly pollMs?: number;
+  /** The `security` binary the bearer is read with; tests point it at a stand-in. */
+  readonly keychain?: KeychainOptions;
 }
 
 type Call = <T>(
@@ -50,8 +60,8 @@ type Call = <T>(
   body?: unknown,
 ) => Promise<Result<T>>;
 
-function client(io: ConformanceIo, token: string): Call {
-  const base = `${(io.env["FRM_API_URL"] ?? DEFAULT_API_URL).replace(/\/+$/, "")}/api/v1`;
+function client(io: ConformanceIo, origin: string, token: string): Call {
+  const base = `${origin}/api/v1`;
   const fetcher: Fetch = io.fetch ?? ((url, init) => fetch(url, init));
   return async (schema, path, body) => {
     const label = `${body === undefined ? "GET" : "POST"} ${path}`;
@@ -126,56 +136,93 @@ function storedLine(r: RunnerConformanceResult): string {
     : `stored   ${pair} is certified as of runner ${r.runner_version}`;
 }
 
+/** The tier a runner's default model is, when nothing uses one of its models yet. */
+const DEFAULT_TIER = "standard";
+
+/** The models a run certifies, and the line that says why these. */
+interface Picked {
+  readonly ids: readonly string[];
+  readonly line: string | null;
+}
+
 /**
- * The models to certify: `--model`, else every active model of the runner that a role binding or a
- * project's step tier runs (GET /runners' bound_roles). None bound is an error that names
- * `--model` and the choices.
+ * The models to certify: `--model`; else every active model of the runner that something uses — a
+ * role binding, a project's step tier or an enabled agent, as GET /runners'
+ * bound_roles lists them — each named with its uses; else, when nothing uses one yet (a runner no
+ * project staffs), its default: the standard tier, else its first active model. Refused: an unknown
+ * runner, a job runner (the supervisor's own, not an agent), a runner with no active model.
  */
 async function modelsToRun(
   o: ConformanceCliOptions,
   call: Call,
-): Promise<Result<readonly string[]>> {
-  if (o.modelId !== undefined) return ok([o.modelId]);
+): Promise<Result<Picked>> {
+  if (o.modelId !== undefined) return ok({ ids: [o.modelId], line: null });
   const runners = await call(RunnersView, "/runners");
   if (!runners.ok) return runners;
   const runner = runners.value.runners.find((r) => r.id === o.runnerId);
+  const refuse = (cls: "not_found" | "validation", message: string) =>
+    err({ class: cls, message, retryable: false });
   if (runner === undefined) {
-    return err({
-      class: "not_found",
-      message: `no runner ${o.runnerId} (GET /runners)`,
-      retryable: false,
-    });
+    return refuse(
+      "not_found",
+      `no runner ${o.runnerId}: the Runners page lists the ones there are`,
+    );
+  }
+  if (!isAgentRunner(runner)) {
+    return refuse(
+      "validation",
+      `runner ${o.runnerId} is one of the supervisor's own jobs, not an agent runner: there is nothing to certify`,
+    );
   }
   const bound = runner.models.filter((m) => m.bound_roles.length > 0);
-  if (bound.length === 0) {
-    const all = runner.models.map((m) => m.id).join(", ");
-    return err({
-      class: "validation",
-      message: `no role binding or project step tier runs a model of ${o.runnerId}: pass --model <id> (${all === "" ? "it has no active model" : `one of ${all}`})`,
-      retryable: false,
+  if (bound.length > 0) {
+    return ok({
+      ids: bound.map((m) => m.id),
+      line: `models   ${bound.map((m) => `${m.id} (used by ${m.bound_roles.join(", ")})`).join(" · ")}`,
     });
   }
-  return ok(bound.map((m) => m.id));
+  const standard = runner.models.find((m) => m.tier === DEFAULT_TIER);
+  const fallback = standard ?? runner.models[0];
+  if (fallback === undefined) {
+    return refuse(
+      "validation",
+      `runner ${o.runnerId} has no active model, so there is nothing to certify`,
+    );
+  }
+  const why =
+    standard === undefined
+      ? "its first active model"
+      : `the ${DEFAULT_TIER} tier`;
+  return ok({
+    ids: [fallback.id],
+    line: `models   ${fallback.id}: no project, agent or role uses a model of ${o.runnerId} yet, so its default (${why})`,
+  });
 }
 
 export async function runnerConformance(
   o: ConformanceCliOptions,
   io: ConformanceIo,
 ): Promise<number> {
-  const token = io.env["FRM_API_TOKEN"];
-  if (token === undefined || token === "") {
-    io.out("FAIL  set FRM_API_TOKEN: the operator's API bearer");
+  const origin = apiBaseOf(io.env);
+  if (!origin.ok) {
+    io.out(`FAIL  ${origin.error.message}`);
     return 2;
   }
-  const call = client(io, token);
+  const token = await apiTokenOf(io.env, io.keychain);
+  if (!token.ok || token.value === undefined) {
+    io.out(`FAIL  ${token.ok ? NO_API_TOKEN : token.error.message}`);
+    return 2;
+  }
+  const call = client(io, origin.value, token.value);
   const models = await modelsToRun(o, call);
   if (!models.ok) {
     io.out(`FAIL  ${models.error.message}`);
     return 1;
   }
+  if (models.value.line !== null) io.out(models.value.line);
   // One at a time, as the supervisor runs them anyway; the worst exit wins.
   let worst = 0;
-  for (const modelId of models.value) {
+  for (const modelId of models.value.ids) {
     const code = await runOne(o, modelId, call, io);
     worst = Math.max(worst, code);
     if (code === 2) break; // the deadline or no token: the rest would wait the same

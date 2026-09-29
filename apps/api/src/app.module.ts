@@ -44,6 +44,8 @@ import type { JiraService } from "./jira/service.js";
 import { NotificationsController } from "./notify/notifications.controller.js";
 import type { NotificationsService } from "./notify/service.js";
 import type { ProjectsService } from "./projects/projects-service.js";
+import { FoldersController } from "./projects/folders/folders.controller.js";
+import type { FoldersService } from "./projects/folders/folders-service.js";
 import {
   AgentEditController,
   ProjectsController,
@@ -66,6 +68,7 @@ import {
   NOTIFICATIONS_SERVICE,
   PAYLOAD_CONFIG,
   PROJECTS_SERVICE,
+  FOLDERS_SERVICE,
   PTY_HUB,
   TICKET_SERVICE,
   WS_TUNING_TOKEN,
@@ -93,6 +96,8 @@ export interface AppDeps {
   readonly diffs?: SessionDiffService;
   /** POST /projects, its agents and PATCH /agents/:id; absent mounts none. */
   readonly projects?: ProjectsService;
+  /** /folders/check|allow|init; absent mounts none. */
+  readonly folders?: FoldersService;
   /** POST /executors; absent mounts none. */
   readonly executorsCreate?: ExecutorsCreateService;
   /** A project's timeline and export, an agent's sessions; absent mounts none. */
@@ -144,6 +149,7 @@ export class AppModule {
         ...(deps.projects === undefined
           ? []
           : [ProjectsController, AgentEditController]),
+        ...(deps.folders === undefined ? [] : [FoldersController]),
         ...(deps.executorsCreate === undefined
           ? []
           : [ExecutorsCreateController]),
@@ -171,6 +177,9 @@ export class AppModule {
         ...(deps.projects === undefined
           ? []
           : [{ provide: PROJECTS_SERVICE, useValue: deps.projects }]),
+        ...(deps.folders === undefined
+          ? []
+          : [{ provide: FOLDERS_SERVICE, useValue: deps.folders }]),
         ...(deps.history === undefined
           ? []
           : [{ provide: HISTORY_SERVICE, useValue: deps.history }]),

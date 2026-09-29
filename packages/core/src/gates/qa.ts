@@ -227,7 +227,7 @@ export function qaSecretName(name: string): Result<string> {
   if (trimmed.length > QA_SECRET_NAME_MAX || !QA_SECRET_NAME.test(trimmed)) {
     return err({
       class: "validation",
-      message: `${JSON.stringify(name)} is not a secret name: upper-case letters, digits and underscores, a letter first (§14)`,
+      message: `${JSON.stringify(name)} is not a secret name: use upper-case letters, digits and underscores, starting with a letter`,
       retryable: false,
     });
   }

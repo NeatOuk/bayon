@@ -149,6 +149,7 @@ const NAMES = [
   "model_standby",
   "runner_updates",
   "drift_rounds_max",
+  "private_repo_hosts",
 ];
 const SHIPPED = NAMES.map((name, i) => ({ version: i + 1, name }));
 const LATEST = SHIPPED.length;

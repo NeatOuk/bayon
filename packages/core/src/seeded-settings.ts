@@ -15,6 +15,10 @@ import { UNTRUSTED_ROLES_KEY, UntrustedRoles } from "./gates/settings.js";
 import { LOGIN_IN_PLACE_KEY, LoginInPlace } from "./login-in-place.js";
 import { LOCAL_ROOTS_KEY, LocalRoots } from "./project/local-roots.js";
 import {
+  PRIVATE_REPO_HOSTS_KEY,
+  PrivateRepoHosts,
+} from "./project/repo-hosts.js";
+import {
   NOTIFY_BASE_URL_KEY,
   NOTIFY_EMAIL_FROM_KEY,
   NOTIFY_EMAIL_TO_KEY,
@@ -42,6 +46,8 @@ export const SHELL_ONLY_SETTINGS: Readonly<Record<string, z.ZodType>> = {
   [UNTRUSTED_ROLES_KEY]: UntrustedRoles,
   [LOGIN_IN_PLACE_KEY]: LoginInPlace,
   [LOCAL_ROOTS_KEY]: LocalRoots,
+  // The loopback and private hosts a project's repo may be read from.
+  [PRIVATE_REPO_HOSTS_KEY]: PrivateRepoHosts,
   [AGENT_GIT_AUTHOR_KEY]: AgentGitAuthor,
   // The notifier's recipient, sender and link origin: strings, and each steers where a
   // notification goes or what it links to. A LAN page may change them only through the door that

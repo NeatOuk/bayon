@@ -128,7 +128,7 @@ test("a fixing run on another ticket is refused inside the dialog (422)", async 
     within(dialog).getByRole("button", { name: "Resolve finding" }),
   );
   expect((await within(dialog).findByRole("alert")).textContent).toBe(
-    "law_refused: run R-9 works ticket-9, not ticket-812",
+    "run R-9 works ticket-9, not ticket-812",
   );
   expect(screen.getByRole("dialog")).toBeTruthy();
 });
@@ -196,7 +196,7 @@ test("a 409 says the finding moved on, closes the dialog and refetches the ticke
   );
   expect(
     await within(findingsRegion()).findByText(
-      /changed before your write arrived \(conflict: finding f1 is resolved, not open\)/,
+      /changed before your write arrived \(finding f1 is resolved, not open\)/,
     ),
   ).toBeTruthy();
   expect(

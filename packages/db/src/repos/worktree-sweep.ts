@@ -112,6 +112,17 @@ export function listSweepWorktrees(db: Db): R<SweepWorktree[]> {
   );
 }
 
+/**
+ * Whether a worktree row ever existed, removed and merged ones included: the sweep makes a missing
+ * $FRM_HOME/work only on an install that never had one (a fresh home), never on one that did.
+ */
+export async function everHadWorktree(db: Db): R<boolean> {
+  const found = await read(db, (ix) =>
+    first(ix, qb.selectFrom("worktrees").select("id").limit(1)),
+  );
+  return found.ok ? ok(found.value !== undefined) : found;
+}
+
 /** One row, as listSweepWorktrees gives it: phase B's re-read (§4 check 1). Null when absent. */
 export function getSweepWorktree(db: Db, id: string): R<SweepWorktree | null> {
   return read(db, (ix) => {

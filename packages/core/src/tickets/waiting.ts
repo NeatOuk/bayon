@@ -43,6 +43,10 @@ export interface WaitFacts {
   readonly proposal_open: boolean;
   /** The live holder session's state; null when none holds it. */
   readonly holder_state: string | null;
+  /** A `session.spawn` is queued for it with no session row yet: nextStep's `starting`. */
+  readonly spawn_queued: boolean;
+  /** A live gate reviewer session on it: nextStep's `reviewing`, which staffing waits out. */
+  readonly reviewer_live: boolean;
   readonly handoff_pending: boolean;
   readonly has_orchestrator: boolean;
   readonly fleet_paused: boolean;
@@ -102,13 +106,15 @@ const pausedWait = (f: WaitFacts): Wait | null =>
       ? wait("paused", SAY.paused("project"))
       : null;
 
-const staffingWait = (f: WaitFacts): Wait | null =>
-  f.has_orchestrator
+function staffingWait(f: WaitFacts): Wait | null {
+  if (f.spawn_queued || f.reviewer_live) return null;
+  return f.has_orchestrator
     ? pausedWait(f)
     : wait(
         "no_orchestrator",
         SAY.staffYourself(f.handoff_pending ? "a successor" : "it"),
       );
+}
 
 function holderWait(f: WaitFacts): Wait | null {
   if (f.holder_state === null) return staffingWait(f);

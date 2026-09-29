@@ -400,6 +400,15 @@ describe("the proxy", () => {
     expect(seen[0]?.headers.cookie).toBeUndefined();
   });
 
+  test("a browser's own x-frm-local-browser never reaches the API: the edge is never local", async () => {
+    const cookie = await loginCookie();
+    const reply = await call("/api/v1/fleet", {
+      headers: { ...OWN, cookie, "x-frm-local-browser": "1" },
+    });
+    expect(reply.status).toBe(200);
+    expect(seen.at(-1)?.headers["x-frm-local-browser"]).toBeUndefined();
+  });
+
   test.each([
     ["PUT", "/api/v1/settings"],
     ["GET", "/api/v1/audit?limit=50"],

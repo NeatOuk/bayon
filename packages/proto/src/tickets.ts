@@ -3,6 +3,7 @@ import {
   ModelTier,
   NextStep,
   RefusalReason,
+  SessionState,
   TicketStatus,
   WAIT_REASON_MAX,
 } from "@bayon/core";
@@ -381,6 +382,32 @@ export type TicketExtras = z.infer<typeof TicketExtras>;
 /** `GET /tickets/:ref/next` (§12.1): who the ticket waits on, why, and what moves it. */
 export { NextStep };
 
+/**
+ * Who holds the ticket, read with its next step so the page says one thing: its live
+ * session (a reviewer's is never its holder), or the spawn staffing queued before that session's
+ * row exists. Null: nothing holds it and nothing is starting.
+ */
+export const TicketHolder = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("session"),
+    agent: z.string(),
+    session_id: z.string(),
+    state: SessionState,
+  }),
+  z.object({ kind: z.literal("queued"), agent: z.string() }),
+]);
+export type TicketHolder = z.infer<typeof TicketHolder>;
+
+/**
+ * A live gate reviewer's session on the ticket: never its holder, but staffing refuses
+ * while one is live, so the page offers no staffing until it ends.
+ */
+export const TicketReviewing = z.object({
+  agent: z.string(),
+  session_id: z.string(),
+});
+export type TicketReviewing = z.infer<typeof TicketReviewing>;
+
 /** `GET /tickets/:ref` (contract 8). */
 export const TicketDetail = TicketExtras.extend({
   ticket: TicketView,
@@ -388,6 +415,10 @@ export const TicketDetail = TicketExtras.extend({
   transitions: z.array(TransitionOption),
   /** Its next step, for the operator: the same value as `GET /tickets/:ref/next`. */
   next_step: NextStep,
+  /** Who holds it, from the same read as `next_step`; an answer from before it has none. */
+  holder: TicketHolder.nullable().default(null),
+  /** A reviewer still live on it, from the same read; an answer from before it has none. */
+  reviewing: TicketReviewing.nullable().default(null),
   /** The transition log from the start; page on with GET /tickets/:ref/events?since=. */
   events: TicketEventsPage,
 });

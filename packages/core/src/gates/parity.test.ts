@@ -172,7 +172,7 @@ describe("rule 3: .gitmodules and workspace_repos.submodule_path agree", () => {
   test("a path only workspace_repos declares is a blocker naming the repo", () => {
     const f = facts({ ...SUBMODULE, gitmodulePaths: ["libs/mid"] });
     expect(summaries(f)).toEqual([
-      'repo leaf declares submodule_path "libs/mid/vendor/leaf", which .gitmodules does not name',
+      'repo leaf is declared as the submodule at "libs/mid/vendor/leaf", which .gitmodules does not name',
     ]);
   });
 

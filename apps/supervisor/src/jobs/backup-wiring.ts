@@ -12,7 +12,7 @@ import {
 import type { HostSecretStores } from "@bayon/executors";
 import type { Logger } from "pino";
 import { backupsDir, dbPath, eventsArchiveDir } from "../paths.js";
-import { runBackupJob } from "./backup-job.js";
+import { BACKUP_NOT_SET_UP, runBackupJob } from "./backup-job.js";
 import { createBackupScheduler } from "./backup-schedule.js";
 import { loadBackupSettings } from "./backup-settings.js";
 import { runRetention } from "./retention.js";
@@ -106,6 +106,7 @@ export function wireBackups(o: BackupWiringOptions): BackupWiring {
         );
       }
     });
+  let toldNotSetUp = false;
   const scheduler = createBackupScheduler({
     clock: o.clock,
     loadSettings: () => loadBackupSettings(o.db),
@@ -117,7 +118,7 @@ export function wireBackups(o: BackupWiringOptions): BackupWiring {
     },
     run: (settings) =>
       serial(async () => {
-        await runBackupJob(
+        const result = await runBackupJob(
           {
             db: o.db,
             clock: o.clock,
@@ -127,6 +128,13 @@ export function wireBackups(o: BackupWiringOptions): BackupWiring {
           },
           settings,
         );
+        // Not set up: one warn line per process with the fix, then quiet until a key appears.
+        if (result.notSetUp === true && !toldNotSetUp) {
+          toldNotSetUp = true;
+          o.log.warn(BACKUP_NOT_SET_UP);
+        } else if (result.notSetUp !== true) {
+          toldNotSetUp = false;
+        }
       }),
     onError: (error) => o.log.error({ error }, "backup scheduler"),
     ...(o.recheckMs === undefined ? {} : { recheckMs: o.recheckMs }),

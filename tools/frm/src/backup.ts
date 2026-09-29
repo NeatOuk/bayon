@@ -203,7 +203,7 @@ async function initKey(rotate: boolean, io: BackupIo): Promise<Result<void>> {
   if (!host.ok) return host;
   if (host.value.kind === "file") {
     return invalid(
-      "the file secret store is provisioned on the host, never by frm: run " +
+      "this home keeps its secrets in files, which frm does not write: on the host, run " +
         "deploy/secrets.sh gen <project> FRM_BACKUP_KEY supervisor migrate",
     );
   }

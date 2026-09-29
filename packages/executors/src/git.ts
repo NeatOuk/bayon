@@ -51,6 +51,36 @@ export const GIT_ENV_FLOOR: Readonly<Record<string, string>> = {
   GIT_TERMINAL_PROMPT: "0",
 };
 
+/**
+ * git's environment for a call that reads a **remote** from this host: the mirror's
+ * first clone and the repo check before a project is created, so the two reach a remote the same
+ * way. ssh never asks anything — no passphrase, no "trust this host key?" — and an unknown host key
+ * fails rather than being accepted; `ConnectTimeout` bounds a host that never answers. git runs
+ * detached (no terminal), so ssh could not have asked anyway: this makes it explicit, and the same
+ * words fail the same way everywhere. Nothing here is a credential.
+ */
+export const REMOTE_GIT_ENV: Readonly<Record<string, string>> = {
+  GIT_SSH_COMMAND:
+    "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15",
+};
+
+/** The transports a remote read may use: no plain http, file, ext or fd. */
+export const REMOTE_PROTOCOLS: readonly string[] = ["https", "ssh"];
+
+/**
+ * `-c` pairs that allow git only `protocols` for this call: `protocol.allow=never` shuts every
+ * transport, each listed one is then allowed. For a remote read (the repo check, a mirror's first
+ * clone), so a URL — or a redirect or submodule it leads to — cannot reach git through anything
+ * else. Tests pass their own list (`file` for a local bare repository).
+ */
+export const remoteProtocolFlags = (
+  protocols: readonly string[] = REMOTE_PROTOCOLS,
+): readonly string[] => [
+  "-c",
+  "protocol.allow=never",
+  ...protocols.flatMap((p) => ["-c", `protocol.${p}.allow=always`]),
+];
+
 /** SAFE_GIT's `-c` pairs as GIT_CONFIG_COUNT/KEY/VALUE, split at the first `=` of each. */
 function configCountEnv(): Record<string, string> {
   const pairs = SAFE_GIT.filter((_, i) => i % 2 === 1).map((setting) => {

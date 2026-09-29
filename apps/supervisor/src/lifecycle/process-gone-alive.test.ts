@@ -16,6 +16,8 @@ import {
   GRACE,
   T0,
   WAIT,
+  advanceUntil,
+  advanceUntilLogged,
   driveUntil,
   killMidRun,
   msgs,
@@ -23,7 +25,9 @@ import {
   reviewer,
   session,
   spawnRunning,
+  untilLogged,
   untilRunning,
+  untilSettled,
   untilStreamEnded,
   withheld,
   worldRows,
@@ -63,6 +67,13 @@ async function setup(
 
 /** Past the longest an exit op may take: a periodic pass notices the missed exit. */
 const PAST_EXIT_OP = 4 * GRACE + 10_000;
+/** A clock step well inside the adopt's straggler probe wait (one grace). */
+const STEP = GRACE / 10;
+const KILLING =
+  "the runner's stream ended but its process has not exited: killing its process group";
+const EXITED = "the runner exited; the reconciler adopts or ends the session";
+const STRAGGLERS = "stragglers of a session to adopt: killing them first";
+const OUTLIVED = "a straggler outlived SIGKILL: the adopt waits";
 
 describe(
   "a stream that ends while its process lives on",
@@ -78,16 +89,19 @@ describe(
       cut.resolve(undefined);
       await untilStreamEnded(w, "L");
       expect(await w.executor.probe(before)).toBe("alive");
-      await driveUntil(w, w.lifecycle.settled());
-      expect(msgs(w)).toContain(
-        "the runner's stream ended but its process has not exited: killing its process group",
-      );
+      // One grace, and no more: past it the op kills the group. Its second grace must not run out
+      // while the real SIGKILL and its exit are on their way, so the clock is held from here.
+      await advanceUntilLogged(w, KILLING);
+      await untilLogged(w, EXITED);
+      await untilSettled(w.lifecycle.settled());
+      expect(msgs(w)).toContain(KILLING);
       expect(msgs(w)).not.toContain(
         "the runner's stream ended but its exit was not reported: going on without it",
       );
       expect(await w.executor.probe(before)).toBe("dead");
-      await driveUntil(w, w.lifecycle.reconcile());
-      await driveUntil(w, w.lifecycle.settled());
+      // The pass and its adopt need no timer here (no stragglers to wait out): real events only.
+      await untilSettled(w.lifecycle.reconcile());
+      await untilSettled(w.lifecycle.settled());
       const after = await session(w.db, "L");
       expect(after.state).toBe("idle");
       expect(after.executor_ref).not.toBe(before);
@@ -128,12 +142,16 @@ describe(
       );
       expect(await w.executor.probe(before)).toBe("alive");
       hold.resolve(undefined);
-      await driveUntil(w, w.lifecycle.settled());
+      // The exit op's two graces pass (its kill was dropped), then the adopt kills the straggler.
+      // Small steps, held once it starts: its probe wait must not run out before SIGKILL lands.
+      await advanceUntilLogged(w, STRAGGLERS, STEP);
+      await vi.waitFor(async () => {
+        expect(await w.executor.probe(before)).toBe("dead");
+      }, WAIT);
+      await driveUntil(w, w.lifecycle.settled(), STEP);
       expect(dropped).toBe(1);
-      expect(msgs(w)).toContain(
-        "stragglers of a session to adopt: killing them first",
-      );
-      expect(await w.executor.probe(before)).toBe("dead");
+      expect(msgs(w)).toContain(STRAGGLERS);
+      expect(msgs(w)).not.toContain(OUTLIVED);
       const after = await session(w.db, "G");
       expect(after.state).toBe("idle");
       expect(after.executor_ref).not.toBe(before);
@@ -259,8 +277,10 @@ describe(
       );
       await untilRunning(w, "RV");
       await killMidRun(w, "RV");
-      await vi.waitFor(async () => {
-        await w.clock.advance(GRACE);
+      // The exit op's graces run out (its exit is never reported); once the hook is told, its
+      // collect runs on real events alone, so the clock is held rather than racing it.
+      await advanceUntil(w, () => out.facts !== undefined);
+      await vi.waitFor(() => {
         expect(out.collected).toBeDefined();
       }, WAIT);
       expect(out.facts?.exit).toEqual({ stderrTail: "" });
@@ -300,6 +320,11 @@ describe(
       );
       expect(told).toHaveLength(0);
       hold.resolve(undefined);
+      // Held once the hook is told: its own read must not race the after-exit's bound.
+      await advanceUntil(w, () => told.length > 0);
+      await vi.waitFor(() => {
+        expect(states).toHaveLength(1);
+      }, WAIT);
       await driveUntil(w, w.lifecycle.settled());
       expect(told).toHaveLength(1);
       expect(told[0]?.exit.code).toBeUndefined();

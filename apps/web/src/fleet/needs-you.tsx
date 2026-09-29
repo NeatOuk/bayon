@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ackAttention } from "@/fleet/fleet-control-api";
 import { formatIdle } from "@/fleet/fleet-model";
+import { useReadiness } from "@/fleet/use-readiness";
 import { inboxCountLabel } from "@/inbox/inbox-count";
 import { useInboxCount } from "@/inbox/use-inbox-count";
 import { formatUtc } from "@/lib/format";
@@ -20,6 +21,9 @@ import { INBOX_HREF, RUNNERS_HREF, sessionHref } from "@/routing";
 // hand it off) and an error exit (dismissed for good once seen) — the Inbox's open
 // questions, read from the very query the header's count rides (no second request) —
 // and an open runner update check, which is not session-keyed and so is its own row.
+// First come the install's not-ready rows: what stops any work at all — no project, no
+// builder, an uncertified model for a project's step, an orchestrator with no mission — each with
+// its one way on, so a fresh install never reads "Nothing needs you".
 
 /** How long ago, as the row reads it: "42m", "2h 5m". */
 const age = (item: AttentionItem, now: number): string =>
@@ -36,6 +40,7 @@ export function NeedsYou({
   readonly now: number;
 }) {
   const inbox = useInboxCount();
+  const notReady = useReadiness();
   const queryClient = useQueryClient();
   const dismiss = useMutation({
     mutationFn: (sessionId: string) => ackAttention(sessionId),
@@ -52,7 +57,11 @@ export function NeedsYou({
       queryClient.invalidateQueries({ queryKey: RUNNERS_KEY });
     },
   });
-  const count = items.length + runnerUpdates.length + (inbox.open > 0 ? 1 : 0);
+  const count =
+    notReady.length +
+    items.length +
+    runnerUpdates.length +
+    (inbox.open > 0 ? 1 : 0);
   return (
     <section aria-label="Needs you" className="flex flex-col gap-2">
       <SectionTitle className="flex items-center gap-2">
@@ -70,6 +79,18 @@ export function NeedsYou({
         </p>
       ) : (
         <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-xs">
+          {notReady.map((row) => (
+            <li
+              key={row.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
+            >
+              <Badge variant="warning">Set up</Badge>
+              <p className="min-w-0 flex-1 font-medium">{row.text}</p>
+              <TextLink href={row.action.href} className="text-sm">
+                {row.action.label}
+              </TextLink>
+            </li>
+          ))}
           {inbox.open > 0 && (
             <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
               <StatusBadge entity="waiting" state="you" label="Questions" />

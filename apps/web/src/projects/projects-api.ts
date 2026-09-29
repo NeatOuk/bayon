@@ -1,7 +1,9 @@
 import {
   ProjectCreated,
   ProjectsView,
+  RepoCheckView,
   type CreateProjectRequest,
+  type RepoCheckRequest,
 } from "@bayon/proto";
 import { queryOptions } from "@tanstack/react-query";
 import { getJson, postJson } from "@/api/http";
@@ -22,3 +24,10 @@ export const projectsQuery = queryOptions({
 export const createProject = (
   request: CreateProjectRequest,
 ): Promise<ProjectCreated> => postJson("/projects", request, ProjectCreated);
+
+/**
+ * `POST /projects/repo-check`: whether the supervisor can read a https or ssh URL's
+ * repository the way the first session's clone will, in plain words. Writes nothing.
+ */
+export const checkRepo = (request: RepoCheckRequest): Promise<RepoCheckView> =>
+  postJson("/projects/repo-check", request, RepoCheckView);

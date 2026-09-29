@@ -14,6 +14,7 @@ import {
 const RUNNERS = "/api/v1/runners";
 const EXECUTORS = "/api/v1/executors";
 const CREATE = "/api/v1/projects";
+const REPO_CHECK = "/api/v1/projects/repo-check";
 
 const fillRequired = async (
   user: ReturnType<typeof userEvent.setup>,
@@ -106,6 +107,14 @@ test("a 400 refusal keeps the form and shows the server's message", async () => 
   stubFetch({
     [RUNNERS]: runnersView([runnerView({ id: "fixture" })]),
     [EXECUTORS]: executorsView([executorView({ id: "local" })]),
+    // The check before Create could not tell: the server's own refusal is what shows.
+    [REPO_CHECK]: {
+      ok: false,
+      outcome: null,
+      message: "Bayon has not checked it.",
+      default_branch: null,
+      command: null,
+    },
     [CREATE]: () =>
       apiError(
         400,
@@ -140,7 +149,9 @@ test("a 201 shows the created project's ids", async () => {
   await fillRequired(user, { executor: "local" });
   await user.click(screen.getByRole("button", { name: "Create" }));
   await waitFor(() => expect(screen.getByText(/is ready/)).toBeTruthy());
-  expect(screen.getByText(/demo-builder/)).toBeTruthy();
+  expect(
+    screen.getByText(/Start work on it. Or give demo-orchestrator a mission/),
+  ).toBeTruthy();
   expect(bodyOf(fetchMock, CREATE, "POST")).toMatchObject({
     name: "demo",
     repo_url: "https://example.com/demo.git",
@@ -216,4 +227,28 @@ test("a create with nothing to warn about shows no warnings", async () => {
   await user.click(screen.getByRole("button", { name: "Create" }));
   expect(await screen.findByText(/is ready\./)).toBeTruthy();
   expect(screen.queryByRole("list", { name: "warnings" })).toBeNull();
+});
+
+test("the runner pickers never list a job runner", async () => {
+  stubFetch({
+    [RUNNERS]: runnersView([
+      runnerView({ id: "fixture" }),
+      runnerView({ id: "script-export-markdown", kind: "job" }),
+      runnerView({ id: "script-lint-check", kind: "job" }),
+    ]),
+    [EXECUTORS]: executorsView([executorView({ id: "local" })]),
+  });
+  renderWithProviders(<NewProjectScreen />);
+  const user = userEvent.setup();
+  for (const name of ["Runner", "Reviewer runner"]) {
+    await user.click(screen.getByRole("combobox", { name }));
+    expect(await screen.findByRole("option", { name: "fixture" })).toBeTruthy();
+    expect(
+      screen.queryByRole("option", { name: "script-export-markdown" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("option", { name: "script-lint-check" }),
+    ).toBeNull();
+    await user.keyboard("{Escape}");
+  }
 });

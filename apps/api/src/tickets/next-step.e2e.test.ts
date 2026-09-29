@@ -198,7 +198,10 @@ test.each([
     1,
     {
       waiting_on: "orchestrator",
-      reason: "Waiting for the orchestrator to prioritise it",
+      reason:
+        "Waiting for the orchestrator to prioritise it (it wakes only when other work is due)",
+      // The spine's builder can take it: Start work saves the wait.
+      action: { kind: "start", label: "Start work" },
     },
   ],
   [

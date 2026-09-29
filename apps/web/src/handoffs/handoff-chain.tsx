@@ -1,4 +1,4 @@
-import type { HandoffView } from "@bayon/proto";
+import type { HandoffReason, HandoffView } from "@bayon/proto";
 import { useQuery } from "@tanstack/react-query";
 import { Id } from "@/components/id";
 import { Loading } from "@/components/loading";
@@ -37,12 +37,29 @@ function SessionLink({
   );
 }
 
+/** Why each hand-off happened, as the operator reads it. */
+const REASON: Readonly<Record<HandoffReason, string>> = {
+  context_ceiling: "Context full",
+  turn_ceiling: "Turn limit reached",
+  budget: "Budget reached",
+  phase_change: "Next phase",
+  role_change: "Role changed",
+  human_release: "Released by you",
+  session_death: "Session died",
+  operator: "Handed off by you",
+  agent_request: "The agent asked",
+  stale_session: "Session went silent",
+};
+
+const reasonText = (reason: string): string =>
+  (REASON as Readonly<Record<string, string>>)[reason] ?? humanize(reason);
+
 const acceptance = (handoff: HandoffView): string =>
   handoff.accepted_at !== null
-    ? "accepted"
+    ? "picked up"
     : handoff.quality === "writing"
       ? "being written"
-      : "not accepted";
+      : "waiting to be picked up";
 
 export function HandoffChain({
   handoffs,
@@ -59,10 +76,10 @@ export function HandoffChain({
             <li key={handoff.id}>
               <Collapsible>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>{`#${index + 1} ${humanize(handoff.reason)}`}</span>
+                  <span>{`#${index + 1} ${reasonText(handoff.reason)}`}</span>
                   <SessionLink id={handoff.from_session_id} none="—" />
                   <span>→</span>
-                  <SessionLink id={handoff.to_session_id} none="no successor" />
+                  <SessionLink id={handoff.to_session_id} none="no one yet" />
                   {/* core's HandoffQuality: `writing` is not takeable yet; `degraded` lost the
                       agent's own judgement. */}
                   <StatusBadge entity="handoff" state={handoff.quality} />
@@ -70,7 +87,7 @@ export function HandoffChain({
                   <CollapsibleTrigger
                     render={
                       <Button variant="outline" size="sm">
-                        packet
+                        note
                       </Button>
                     }
                   />
@@ -109,11 +126,11 @@ function PacketSection({
 /** `GET /handoffs/:id`: loaded when the packet is opened. */
 function HandoffPacket({ id }: { readonly id: string }) {
   const packet = useQuery(handoffQuery(id));
-  if (packet.isPending) return <Loading label="Loading the packet…" />;
+  if (packet.isPending) return <Loading label="Loading the hand-off note…" />;
   if (packet.isError)
     return (
       <QueryError
-        title="The packet is unavailable"
+        title="The hand-off note is unavailable"
         error={packet.error}
         onRetry={() => void packet.refetch()}
       />

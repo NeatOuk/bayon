@@ -324,8 +324,8 @@ const CI_CHECK = {
 /** A hand-off packet: `writing` is not takeable yet; `degraded` lost the agent's own judgement. */
 const HANDOFF = {
   writing: entry("info", "Writing", PencilLine),
-  full: entry("success", "Full"),
-  degraded: entry("warning", "Degraded"),
+  full: entry("success", "Complete"),
+  degraded: entry("warning", "Partial"),
 } as const satisfies Record<HandoffQuality, StatusEntry>;
 
 const INBOX = {

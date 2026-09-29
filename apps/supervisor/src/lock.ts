@@ -16,24 +16,16 @@ import {
 } from "node:fs";
 import { hostname } from "node:os";
 import { err, ok, type Clock, type ErrorClass, type Result } from "@bayon/core";
-import { readProc, type ProcInfo } from "@bayon/executors";
+import {
+  lockHolder,
+  readProc,
+  type LockOwner,
+  type ProcInfo,
+} from "@bayon/executors";
 import type { Logger } from "pino";
-import { z } from "zod";
 
 /** Link attempts before giving up: each lost one means the lock changed hands meanwhile. */
 const ATTEMPTS = 3;
-
-const LockOwner = z.object({
-  pid: z.int().positive(),
-  /** When the owning process started, epoch ms (whole seconds: what ps reports). */
-  started_at: z.int().nonnegative(),
-  host: z.string().min(1),
-  /** When it took the lock, by its supervisor's clock. */
-  acquired_at: z.int(),
-  /** Tells two locks of one process apart. */
-  nonce: z.string().min(1),
-});
-type LockOwner = z.infer<typeof LockOwner>;
 
 export interface SupervisorLock {
   readonly path: string;
@@ -46,11 +38,6 @@ export interface LockOptions {
   readonly clock: Clock;
   readonly log: Logger;
 }
-
-/** What holds the lock file: gone meanwhile, or an owner judged dead or not. */
-type Holder =
-  | "gone"
-  | { readonly raw: string; readonly dead: boolean; readonly why: string };
 
 const fail = (cls: ErrorClass, message: string): Result<never> =>
   err({ class: cls, message, retryable: false });
@@ -70,14 +57,6 @@ const codeOf = (e: unknown): string | undefined =>
   e instanceof Error && "code" in e && typeof e.code === "string"
     ? e.code
     : undefined;
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Takes the lock at `o.path`, or fails (`conflict`) saying who holds it. */
 export async function acquireLock(
@@ -131,7 +110,7 @@ async function takeLock(
     const linked = link(staging, o.path);
     if (!linked.ok) return linked;
     if (linked.value) return ok(held(o, content));
-    const holder = await judgeHolder(o.path);
+    const holder = await lockHolder(o.path);
     if (!holder.ok) return holder;
     if (holder.value === "gone") continue; // released meanwhile
     if (!holder.value.dead) return fail("conflict", holder.value.why);
@@ -160,60 +139,6 @@ function link(from: string, to: string): Result<boolean> {
       ? ok(false)
       : fail("internal", `cannot create ${to}: ${messageOf(e)}`);
   }
-}
-
-async function judgeHolder(path: string): Promise<Result<Holder>> {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (e) {
-    return codeOf(e) === "ENOENT"
-      ? ok("gone")
-      : fail("internal", `cannot read ${path}: ${messageOf(e)}`);
-  }
-  const owner = LockOwner.safeParse(parseJson(raw));
-  if (!owner.success) {
-    return ok({
-      raw,
-      dead: false,
-      why: `${path} exists but is not a supervisor lock; remove it if no supervisor runs on this FRM_HOME`,
-    });
-  }
-  return ok({ raw, ...(await judge(path, owner.data)) });
-}
-
-/** Dead only when provably so; anything unknown counts as alive. */
-async function judge(
-  path: string,
-  owner: LockOwner,
-): Promise<{ readonly dead: boolean; readonly why: string }> {
-  const started = new Date(owner.started_at).toISOString();
-  const holds = `another supervisor holds ${path} (pid ${owner.pid} on ${owner.host}, started ${started})`;
-  if (owner.host !== hostname()) {
-    return {
-      dead: false,
-      why: `${holds}; it is on another host, so this one cannot tell if it is alive`,
-    };
-  }
-  let info: ProcInfo | null;
-  try {
-    info = await readProc(owner.pid);
-  } catch (e) {
-    return {
-      dead: false,
-      why: `${holds}; cannot tell if it is alive: ${messageOf(e)}`,
-    };
-  }
-  if (info === null) return { dead: true, why: `pid ${owner.pid} is gone` };
-  if (info.zombie) return { dead: true, why: `pid ${owner.pid} has exited` };
-  if (info.start * 1000 !== owner.started_at) {
-    const now = new Date(info.start * 1000).toISOString();
-    return {
-      dead: true,
-      why: `pid ${owner.pid} now names a process started at ${now}`,
-    };
-  }
-  return { dead: false, why: holds };
 }
 
 /**

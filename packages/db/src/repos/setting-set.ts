@@ -76,17 +76,44 @@ export function setSettingFromCli(
   key: string,
   value: JsonValue,
 ): R<SettingWrite> {
-  const checked = checkSeededSetting(key, value);
+  const checked = checkGoverned(key, value);
   if (!checked.ok) return Promise.resolve(checked);
-  if (checked.value !== "governed" || !isGovernedSettingKey(key)) {
-    return Promise.resolve(
-      err(
+  return write(db, (ix) => writeSetting(ix, key, value));
+}
+
+/** Core's check of the key and value, and that the key is a governed one. */
+function checkGoverned(key: string, value: JsonValue): Result<void> {
+  const checked = checkSeededSetting(key, value);
+  if (!checked.ok) return checked;
+  return checked.value === "governed" && isGovernedSettingKey(key)
+    ? ok(undefined)
+    : err(
         failure(
           "validation",
           `${key} is not a governed setting; the keys are ${GOVERNED_SETTING_KEYS.join(", ")}`,
         ),
-      ),
+      );
+}
+
+/**
+ * `setSettingFromCli` as a read-modify-write in one transaction (`frm roots add|remove`): `next`
+ * gets the stored value (null when there is no row) and returns the whole new value, checked and
+ * audited exactly as setSettingFromCli's. A refusal from `next` or the check writes nothing, and no
+ * other writer can change the row between the read and the write.
+ */
+export function updateSettingFromCli(
+  db: Db,
+  key: string,
+  next: (from: JsonValue | null) => Result<JsonValue>,
+): R<SettingWrite> {
+  return write(db, (ix) => {
+    const row = first(
+      ix,
+      qb.selectFrom("settings").select("value_json").where("key", "=", key),
     );
-  }
-  return write(db, (ix) => writeSetting(ix, key, value));
+    const value = next(row === undefined ? null : storedJson(row.value_json));
+    if (!value.ok) return value;
+    const checked = checkGoverned(key, value.value);
+    return checked.ok ? writeSetting(ix, key, value.value) : checked;
+  });
 }

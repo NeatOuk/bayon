@@ -273,10 +273,14 @@ async function slow(turn) {
     description: "wait",
   });
   if (process.env.FRM_STUB_CRASH === "1") process.exit(0);
-  await new Promise((resolve) => {
-    turn.wake = resolve;
-    setTimeout(resolve, 30_000);
-  });
+  // A cancel may already be in: read in the same stdin chunk as its prompt, it landed while this
+  // turn was still on its way here, before there was anything to wake.
+  if (!turn.cancelled) {
+    await new Promise((resolve) => {
+      turn.wake = resolve;
+      setTimeout(resolve, 30_000);
+    });
+  }
   try {
     process.kill(-sleeper.pid, "SIGKILL");
   } catch {

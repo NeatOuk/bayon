@@ -39,7 +39,8 @@ describe("checkProjectName", () => {
 describe("checkOriginUrl", () => {
   test.each([
     ["https://example.com/acme/app.git", true],
-    ["http://example.com/acme/app.git", true],
+    // Plain http: no token is ever sent over it.
+    ["http://example.com/acme/app.git", false],
     ["ssh://git@example.com/acme/app.git", true],
     ["git@github.com:acme/app.git", true],
     ["/home/frm/repos/app", false],
@@ -48,6 +49,44 @@ describe("checkOriginUrl", () => {
     ["", false],
   ])("%j is valid: %s", (url, valid) => {
     expect(checkOriginUrl(url).ok).toBe(valid);
+  });
+});
+
+describe("checkOriginUrl refuses a credential in the URL, and never repeats it", () => {
+  const KEYCHAIN = { kind: "keychain", service: "foreman" } as const;
+
+  test.each([
+    "https://x-access-token:ghp_abc@github.com/acme/app.git",
+    "https://ghp_abc@github.com/acme/app.git",
+    "https://user:p@ss@github.com/acme/app.git",
+  ])("%s: store it as FORGE_TOKEN_GITHUB, with the command", (url) => {
+    const r = checkOriginUrl(url, KEYCHAIN);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.message).toBe(
+      "Don't put a password or token in the URL: store it as FORGE_TOKEN_GITHUB instead: security add-generic-password -U -s foreman -a FORGE_TOKEN_GITHUB -w",
+    );
+    expect(r.error.message).not.toMatch(/ghp_abc|p@ss/);
+  });
+
+  test("a host with no forge kind is told to use ssh; an ssh password is refused, an ssh user is not", () => {
+    const other = checkOriginUrl("https://bob:pw@git.example.com/a/b.git");
+    expect(other.ok).toBe(false);
+    if (!other.ok) {
+      expect(other.error.message).toContain("use the repository's ssh URL");
+      expect(other.error.message).not.toContain("pw");
+    }
+    expect(checkOriginUrl("ssh://git:hunter2@example.com/a/b.git").ok).toBe(
+      false,
+    );
+    expect(checkOriginUrl("ssh://git@example.com/a/b.git").ok).toBe(true);
+    expect(checkOriginUrl("git@example.com:a/b.git").ok).toBe(true);
+  });
+
+  test("plain http says why in plain words", () => {
+    const r = checkOriginUrl("http://example.com/a.git");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toContain("is plain http");
   });
 });
 

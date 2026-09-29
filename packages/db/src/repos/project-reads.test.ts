@@ -121,9 +121,47 @@ test("an agent carries what the IDE's Agents view shows and edits", async () => 
       runner_id: "fixture",
       enabled: 0,
       max_concurrency: 3,
+      mission_id: null,
       workspace_id: "tool",
     },
   ]);
+});
+
+// an earlier change (review M2): whether a builder and a reviewer can take a project's work is the server's
+// agent-pool rule — its own agents, or the fleet's while it has none of the kind.
+test("a project's builder and reviewer: its own, or the fleet's it borrows while it has none", async () => {
+  const pools = async () =>
+    Object.fromEntries(
+      unwrap(await listProjects(t.db)).map((p) => [
+        p.workspace.id,
+        [p.hasBuilder, p.hasReviewer],
+      ]),
+    );
+  // app: its own builder. empty: none of its own, so the fleet's (the spine's). tool: its own is
+  // disabled, and a busy or disabled own agent means it waits rather than borrows. No reviewer.
+  expect(await pools()).toEqual({
+    app: [true, false],
+    empty: [true, false],
+    tool: [false, false],
+  });
+  unwrap(
+    await seedRows(t.db, {
+      agents: [
+        {
+          id: "fleet-reviewer",
+          name: "fleet-reviewer",
+          kind: "reviewer",
+          runner_id: "fixture",
+          created_at: 1,
+        },
+      ],
+    }),
+  );
+  expect(await pools()).toEqual({
+    app: [true, true],
+    empty: [true, true],
+    tool: [false, true],
+  });
 });
 
 test("listTickets by workspace is one project's tickets", async () => {

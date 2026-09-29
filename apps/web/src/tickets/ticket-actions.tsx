@@ -1,5 +1,10 @@
 import { STAFFABLE_STATUSES, type TicketStatus } from "@bayon/core";
-import type { TicketView, TransitionOption } from "@bayon/proto";
+import type {
+  TicketHolder,
+  TicketReviewing,
+  TicketView,
+  TransitionOption,
+} from "@bayon/proto";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { useId, useState } from "react";
@@ -26,10 +31,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { notify } from "@/components/ui/toast";
-import { useFleet } from "@/fleet/use-fleet";
 import { sessionHref } from "@/routing";
 import { Panel } from "@/tickets/panel";
-import { notesFor, refusalText } from "@/tickets/ticket-model";
+import {
+  plainError,
+  plainRefusal,
+  technicalRefusal,
+} from "@/tickets/refusal-text";
+import { notesFor } from "@/tickets/ticket-model";
 import { useTicketMove } from "@/tickets/use-ticket-move";
 
 /** The moves that stop a ticket or set it aside: kept apart from the flow's, and confirmed. */
@@ -53,10 +62,16 @@ export const moveLabel = (to: TicketStatus): string =>
 export function TicketActions({
   ticket,
   transitions,
+  holder = null,
+  reviewing = null,
   suggested = null,
 }: {
   readonly ticket: TicketView;
   readonly transitions: readonly TransitionOption[];
+  /** Who holds it, from the detail's own read: the same truth as the next step. */
+  readonly holder?: TicketHolder | null;
+  /** A reviewer still live on it: staffing refuses until it ends. */
+  readonly reviewing?: TicketReviewing | null;
   /** The move the next step names: the one primary button; the others are secondary. */
   readonly suggested?: TicketStatus | null;
 }) {
@@ -114,7 +129,13 @@ export function TicketActions({
         </Button>
         {(STAFFABLE_STATUSES as readonly TicketStatus[]).includes(
           ticket.status,
-        ) && <StaffBuilderButton ticket={ticket} />}
+        ) && (
+          <StaffBuilderButton
+            ticket={ticket}
+            holder={holder}
+            reviewing={reviewing}
+          />
+        )}
       </div>
       {move.ui}
     </Panel>
@@ -218,16 +239,22 @@ function StopRow({
 
 /**
  * Staffs a builder (`POST /tickets/:num/staff`, role fixed to "builder"): a separate action from
- * any status move. Shown only on a staffable status, but a status alone does not say whether a live
- * session already holds the ticket — `admit()`'s own rule (`packages/db/src/repos/staffing.ts`) is
- * "any live session with this ticket_id", which `Fleet.sessions` already answers for free (built
- * from `v_fleet`, whose own WHERE clause excludes exactly the states admit() treats as ended). So a
- * held ticket disables the button instead of letting the click round-trip to a raw server refusal.
+ * any status move. Shown only on a staffable status. Whether something already holds the ticket is
+ * the detail's own `holder`, read with the next step: a live session, or the spawn a
+ * staffing queued before that session's row exists; and a live reviewer, which staffing counts too.
+ * Each disables the button with its own line, so the page never says "held" beside "no session
+ * holds it". The server still decides on submit.
  */
-function StaffBuilderButton({ ticket }: { readonly ticket: TicketView }) {
+function StaffBuilderButton({
+  ticket,
+  holder,
+  reviewing,
+}: {
+  readonly ticket: TicketView;
+  readonly holder: TicketHolder | null;
+  readonly reviewing: TicketReviewing | null;
+}) {
   const queryClient = useQueryClient();
-  const fleet = useFleet();
-  const heldBy = fleet.data?.sessions.find((s) => s.ticket === ticket.num);
   // One key per staffing attempt, held across a retry of it: a request that failed after the server
   // had already queued the spawn must not queue a second one. Settled on success, so a
   // later, deliberate staffing of this ticket is a new operation with a key of its own.
@@ -250,25 +277,42 @@ function StaffBuilderButton({ ticket }: { readonly ticket: TicketView }) {
       <Button
         size="sm"
         variant="outline"
-        disabled={staff.isPending || heldBy !== undefined}
+        disabled={staff.isPending || holder !== null || reviewing !== null}
         onClick={() => staff.mutate()}
       >
         Staff builder
       </Button>
-      {heldBy !== undefined && (
-        <span className="text-xs text-muted-foreground">
-          {`Held by ${heldBy.agent} (${labelOf("session", heldBy.state)}) — `}
-          <TextLink href={sessionHref(heldBy.id)} inline>
-            session
-          </TextLink>
-        </span>
+      {holder !== null ? (
+        <HolderLine holder={holder} />
+      ) : (
+        reviewing !== null && (
+          <span className="text-xs text-muted-foreground">
+            A reviewer is still finishing on this ticket: wait for it.
+          </span>
+        )
       )}
       {staff.error !== null && (
         <p role="alert" className="text-sm text-destructive">
-          {staff.error.message}
+          {plainError(staff.error)}
         </p>
       )}
     </div>
+  );
+}
+
+/** Who holds the ticket: its session, linked, or the one starting for it. */
+function HolderLine({ holder }: { readonly holder: TicketHolder }) {
+  return holder.kind === "queued" ? (
+    <span className="text-xs text-muted-foreground">
+      {`Starting a session for ${holder.agent}…`}
+    </span>
+  ) : (
+    <span className="text-xs text-muted-foreground">
+      {`Held by ${holder.agent} (${labelOf("session", holder.state)}) — `}
+      <TextLink href={sessionHref(holder.session_id)} inline>
+        session
+      </TextLink>
+    </span>
   );
 }
 
@@ -281,8 +325,12 @@ function OptionNote({
 }) {
   if (!option.allowed)
     return (
-      <span id={id} className="text-xs break-words text-danger">
-        {refusalText(option)}
+      <span
+        id={id}
+        className="text-xs break-words text-danger"
+        title={technicalRefusal(option)}
+      >
+        {plainRefusal(option)}
       </span>
     );
   const checked =

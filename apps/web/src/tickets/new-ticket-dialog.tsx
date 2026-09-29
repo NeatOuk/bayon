@@ -1,7 +1,11 @@
-import { TicketType, type CreateTicketRequest } from "@bayon/proto";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  TicketType,
+  type CreateTicketRequest,
+  type WorkspaceView,
+} from "@bayon/proto";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { createTicket, TICKETS_KEY } from "@/api/queries";
+import { createTicket, TICKETS_KEY, workspacesQuery } from "@/api/queries";
 import { ChoiceField } from "@/components/choice-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +29,6 @@ const PRIORITIES = ["1", "2", "3", "4", "5"] as const;
 interface Form {
   readonly title: string;
   readonly type: string;
-  readonly workspace_id: string | null;
   readonly body_md: string;
   readonly acceptance_md: string;
   readonly priority: string;
@@ -34,20 +37,35 @@ interface Form {
 const BLANK: Form = {
   title: "",
   type: "feature",
-  workspace_id: null,
   body_md: "",
   acceptance_md: "",
   priority: "3",
 };
 
-/** The POST body from the form, or null while the title is blank. */
-function requestOf(form: Form): CreateTicketRequest | null {
+/**
+ * The project a new ticket starts in: the view's own project when opened from one,
+ * else the only project when there is exactly one, else none.
+ */
+export function defaultProjectOf(
+  viewProject: string | null,
+  workspaces: readonly WorkspaceView[],
+): string | null {
+  if (viewProject !== null) return viewProject;
+  const [only, ...rest] = workspaces;
+  return only !== undefined && rest.length === 0 ? only.id : null;
+}
+
+/** The POST body from the form and its project, or null while the title is blank. */
+function requestOf(
+  form: Form,
+  workspaceId: string | null,
+): CreateTicketRequest | null {
   const title = form.title.trim();
   if (title === "") return null;
   return {
     title,
     type: TicketType.parse(form.type),
-    workspace_id: form.workspace_id ?? undefined,
+    workspace_id: workspaceId ?? undefined,
     body_md: form.body_md.trim() === "" ? undefined : form.body_md,
     acceptance_md:
       form.acceptance_md.trim() === "" ? undefined : form.acceptance_md,
@@ -67,8 +85,11 @@ export function NewTicketDialog({
   readonly defaultProject?: string | null;
 } = {}) {
   const queryClient = useQueryClient();
+  const workspaces = useQuery(workspacesQuery);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>(BLANK);
+  // Undefined until the operator picks: the default follows the projects as they load.
+  const [pickedProject, setPickedProject] = useState<string | null>();
   const create = useMutation({
     mutationFn: createTicket,
     onSuccess: (view) => {
@@ -82,7 +103,8 @@ export function NewTicketDialog({
   function onOpenChange(next: boolean) {
     setOpen(next);
     if (next) {
-      setForm({ ...BLANK, workspace_id: defaultProject });
+      setForm(BLANK);
+      setPickedProject(undefined);
       create.reset();
     }
   }
@@ -90,7 +112,11 @@ export function NewTicketDialog({
   const set = (patch: Partial<Form>) =>
     setForm((current) => ({ ...current, ...patch }));
 
-  const request = requestOf(form);
+  const workspaceId =
+    pickedProject !== undefined
+      ? pickedProject
+      : defaultProjectOf(defaultProject, workspaces.data?.workspaces ?? []);
+  const request = requestOf(form, workspaceId);
   const titleId = useId();
   const workspaceLabelId = useId();
   const bodyId = useId();
@@ -126,8 +152,8 @@ export function NewTicketDialog({
           <ProjectSelect
             labelId={workspaceLabelId}
             noneLabel="(none)"
-            value={form.workspace_id}
-            onChange={(workspace_id) => set({ workspace_id })}
+            value={workspaceId}
+            onChange={setPickedProject}
             className="w-full"
           />
         </div>

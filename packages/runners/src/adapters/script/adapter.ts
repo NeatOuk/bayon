@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import {
   err,
+  JOB_RUNNER_KIND,
   ok,
   systemClock,
   type Clock,
@@ -174,7 +175,8 @@ export function createScriptAdapter(
       ],
       runner: {
         id: options.id,
-        kind: "script",
+        // A job, not an agent: never offered to certify or staff.
+        kind: JOB_RUNNER_KIND,
         adapter: options.id,
         versionDetected: SCRIPT_VERSION,
         caps,

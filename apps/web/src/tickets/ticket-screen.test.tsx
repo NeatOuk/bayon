@@ -2,10 +2,11 @@ import type { TicketEventView, TransitionOption } from "@bayon/proto";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createQueryClient } from "@/api/query-client";
 import { FeedProvider, type Feed } from "@/feed/feed";
-import { sessionView } from "@/test/fixtures";
+import { fleet, fleetRow, sessionView } from "@/test/fixtures";
+import { pushFeed } from "@/test/push-feed";
 import { inboxItem, inboxPage } from "@/test/inbox-fixtures";
 import {
   bodyOf,
@@ -23,9 +24,10 @@ import {
   ticketEvent,
   ticketView,
 } from "@/test/ticket-fixtures";
-import { TicketScreen } from "@/tickets/ticket-screen";
+import { QUEUED_POLL_MS, TicketScreen } from "@/tickets/ticket-screen";
 
 const DETAIL = "/api/v1/tickets/812";
+const FLEET = "/api/v1/fleet";
 const TRANSITION = `${DETAIL}/transition`;
 
 type FetchMock = ReturnType<typeof stubFetch>;
@@ -149,12 +151,12 @@ test("the hand-off chain lists each hand-off in order", async () => {
   const chain = await screen.findByRole("region", { name: "hand-offs" });
   const items = within(chain).getAllByRole("listitem");
   expect(items.map((li) => li.textContent)).toEqual([
-    expect.stringMatching(/#1 Phase.*accepted/),
-    expect.stringMatching(/#2 Context ceiling.*not accepted/),
+    expect.stringMatching(/#1 Phase.*picked up/),
+    expect.stringMatching(/#2 Context full.*waiting to be picked up/),
   ]);
 });
 
-test("a disallowed action shows the rule that refuses it; an allowed one posts with If-Match", async () => {
+test("a disallowed action says why in plain words, the rule in its title; an allowed one posts with If-Match", async () => {
   const fetchMock = stubFetch({
     [DETAIL]: ticketDetail(TICKET, { transitions: [REQUEST_FIX, PASS_REVIEW] }),
     [TRANSITION]: ticketView({ ...TICKET, status: "review_fix", version: 4 }),
@@ -166,8 +168,11 @@ test("a disallowed action shows the rule that refuses it; an allowed one posts w
     name: "Move to QA harness",
   }) as HTMLButtonElement;
   expect(refused.disabled).toBe(true);
-  expect(within(actions).getByText(/refused by pass_review/).textContent).toBe(
-    "refused by pass_review (facts_unavailable): code_review gate facts land in M3",
+  const note = within(actions).getByText(
+    "What this move needs couldn't be read: try again.",
+  );
+  expect(note.getAttribute("title")).toBe(
+    "pass_review (facts_unavailable): code_review gate facts land in M3",
   );
 
   await user.click(
@@ -211,7 +216,7 @@ test("a 409 refetches the ticket and says it moved on", async () => {
   expect(await screen.findByText("Review fix")).toBeTruthy();
 });
 
-test("a law refusal on submit shows the rule, the reason and the detail", async () => {
+test("a law refusal on submit says why in plain words", async () => {
   stubFetch({
     [DETAIL]: ticketDetail(TICKET, {
       transitions: [
@@ -245,8 +250,9 @@ test("a law refusal on submit shows the rule, the reason and the detail", async 
     within(actions).getByRole("button", { name: "Move to Plan review" }),
   );
   const alert = await screen.findByRole("alert");
+  // Plain words, and the files, which say exactly what to revert.
   expect(alert.textContent).toBe(
-    "refused by submit_plan (source_changes): src/x.ts changed",
+    "The plan changed source files: revert them first. src/x.ts changed",
   );
 });
 
@@ -306,9 +312,7 @@ test("a failed move keeps the notes dialog open, with the notes and the refusal"
   await user.click(screen.getByRole("button", { name: "Move to Blocked" }));
 
   const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toBe(
-    "refused by block (cross_ticket_write): not yours",
-  );
+  expect(alert.textContent).toBe("A session can only move its own ticket.");
   expect(
     (screen.getByLabelText("Blocked reason") as HTMLTextAreaElement).value,
   ).toBe("waiting on keys");
@@ -440,7 +444,7 @@ test("an unknown ticket says so", async () => {
   renderWithProviders(<TicketScreen num={999} />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The ticket is unavailable")).toBeTruthy();
-  expect(alert.textContent).toMatch(/not_found/);
+  expect(alert.textContent).toContain("/api/v1/");
   expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
 });
 
@@ -463,7 +467,7 @@ test("a body the schema rejects shows the refusal at once, with no retry", async
   const fetchMock = stubFetch({ [DETAIL]: stale });
   renderWithAppClient(812);
   expect((await screen.findByRole("alert")).textContent).toMatch(
-    /unexpected response from \/tickets\/812/,
+    /answer for \/tickets\/812 could not be read/,
   );
   expect(screen.queryByText(/loading the ticket/i)).toBeNull();
   expect(calls(fetchMock, DETAIL)).toHaveLength(1);
@@ -474,7 +478,7 @@ test("a failure that will be retried says so while the ticket loads", async () =
   renderWithAppClient(812);
   expect(
     await screen.findByText(
-      "Loading the ticket… retrying after internal: HTTP 502 from /tickets/812",
+      "Loading the ticket… trying again. The server answered HTTP 502 for /tickets/812: check that the API is running, then try again.",
     ),
   ).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
@@ -658,4 +662,138 @@ test("actions, economics and add-a-law sit in the rail; the log reads a move as 
   expect(
     within(row as HTMLElement).getByTitle("01K5Z9Q2B7XJ4M0NBUILD00001"),
   ).toBeTruthy();
+});
+
+// after "Staff builder" the page said "No session holds it" beside "Held by … (Idle)",
+// with sessions 0: the detail was read before the session row existed, and only the fleet moved on.
+test("a staffed ticket: starting, then its idle session, and the banner, holder and economics agree", async () => {
+  const { feed, pushFleet } = pushFeed();
+  const STAFFED = ticketView({ ...TICKET, status: "staffed" });
+  let started = false;
+  const fetchMock = stubFetch({
+    [FLEET]: fleet([]),
+    [DETAIL]: () =>
+      started
+        ? ticketDetail(STAFFED, {
+            next_step: {
+              waiting_on: "agent",
+              reason: "demo-builder is starting (turn 1, between turns)",
+            },
+            holder: {
+              kind: "session",
+              agent: "demo-builder",
+              session_id: "s-1",
+              state: "idle",
+            },
+            economics: { ...ZERO_ECONOMICS, sessions: 1, cost_usd: 0.25 },
+          })
+        : ticketDetail(STAFFED, {
+            next_step: {
+              waiting_on: "agent",
+              reason: "Starting a session for demo-builder…",
+            },
+            holder: { kind: "queued", agent: "demo-builder" },
+          }),
+  });
+  renderWithProviders(<TicketScreen num={812} />, { feed });
+  const banner = await screen.findByLabelText("next step");
+  expect(banner.textContent).toContain("Starting a session for demo-builder…");
+  const actions = screen.getByRole("region", { name: "actions" });
+  expect(
+    within(actions).getByText("Starting a session for demo-builder…"),
+  ).toBeTruthy();
+  await waitFor(() => expect(calls(fetchMock, FLEET)).toHaveLength(1));
+
+  // The session row appears: a fleet frame, no ticket event. The detail follows it.
+  started = true;
+  pushFleet(
+    fleet([
+      fleetRow({
+        id: "s-1",
+        agent: "demo-builder",
+        state: "idle",
+        ticket: 812,
+        turns: 1,
+      }),
+    ]),
+  );
+  expect(
+    await within(actions).findByText(/Held by demo-builder \(Idle\)/),
+  ).toBeTruthy();
+  expect(banner.textContent).toContain("demo-builder is starting (turn 1");
+  const economics = screen.getByRole("region", { name: "economics" });
+  expect(within(economics).getByText("1")).toBeTruthy();
+  expect(calls(fetchMock, DETAIL)).toHaveLength(2);
+
+  // A frame that changes nothing of this ticket's sessions reads nothing again.
+  pushFleet(
+    fleet([
+      fleetRow({
+        id: "s-1",
+        agent: "demo-builder",
+        state: "idle",
+        ticket: 812,
+        turns: 1,
+      }),
+      fleetRow({ id: "s-other", ticket: 99 }),
+    ]),
+  );
+  expect(calls(fetchMock, DETAIL)).toHaveLength(2);
+});
+
+// Review L2: the fleet's first answer is the baseline, so opening the page reads the detail once.
+test("opening a ticket with a live session reads its detail once", async () => {
+  const fetchMock = stubFetch({
+    [FLEET]: fleet([fleetRow({ id: "s-1", state: "idle", ticket: 812 })]),
+    [DETAIL]: ticketDetail(ticketView({ ...TICKET, status: "staffed" })),
+  });
+  renderWithProviders(<TicketScreen num={812} />, { feed: pushFeed().feed });
+  await screen.findByLabelText("next step");
+  await waitFor(() => expect(calls(fetchMock, FLEET)).toHaveLength(1));
+  await act(() => Promise.resolve());
+  expect(calls(fetchMock, DETAIL)).toHaveLength(1);
+});
+
+// Review L3: a spawn that fails never writes a session row or a fleet change, so "Starting…" would
+// stand forever; the page re-reads the detail while its holder is a queued spawn, and stops after.
+test("while its session is starting the page re-reads the ticket, and stops once it has", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const STAFFED = ticketView({ ...TICKET, status: "staffed" });
+    let failed = false;
+    const fetchMock = stubFetch({
+      [DETAIL]: () =>
+        failed
+          ? ticketDetail(STAFFED, {
+              next_step: {
+                waiting_on: "orchestrator",
+                reason:
+                  "No session holds it: waiting for the orchestrator to staff it",
+              },
+            })
+          : ticketDetail(STAFFED, {
+              next_step: {
+                waiting_on: "agent",
+                reason: "Starting a session for demo-builder…",
+              },
+              holder: { kind: "queued", agent: "demo-builder" },
+            }),
+    });
+    renderWithProviders(<TicketScreen num={812} />);
+    await screen.findByText("Starting a session for demo-builder…", {
+      selector: "span.font-medium",
+    });
+    failed = true;
+    await act(() => vi.advanceTimersByTimeAsync(QUEUED_POLL_MS));
+    expect(
+      await screen.findByText(
+        "No session holds it: waiting for the orchestrator to staff it",
+      ),
+    ).toBeTruthy();
+    const reads = calls(fetchMock, DETAIL).length;
+    await act(() => vi.advanceTimersByTimeAsync(QUEUED_POLL_MS * 3));
+    expect(calls(fetchMock, DETAIL)).toHaveLength(reads);
+  } finally {
+    vi.useRealTimers();
+  }
 });

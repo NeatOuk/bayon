@@ -30,7 +30,7 @@ export async function chooseParityJob(
   if (adapter === undefined) {
     return ok({
       found: null,
-      detail: `parity_check runs the ${PARITY_RUNNER_ID} job, and this supervisor has no adapter for it`,
+      detail: `The parity check needs the ${PARITY_RUNNER_ID} job, which this supervisor does not have: waive this gate, or run a supervisor built with it`,
     });
   }
   const agents = await listUtilAgents(i.db, PARITY_RUNNER_ID);
@@ -39,7 +39,7 @@ export async function chooseParityJob(
   if (agent === undefined) {
     return ok({
       found: null,
-      detail: `parity_check runs the ${PARITY_RUNNER_ID} job, and no enabled kind='util' agent of it exists: seed the parity checker's rows with \`frm config apply\``,
+      detail: `The parity check needs the ${PARITY_RUNNER_ID} job's agent, and none is enabled: add the parity checker with \`frm config apply <file.json>\``,
     });
   }
   return ok({

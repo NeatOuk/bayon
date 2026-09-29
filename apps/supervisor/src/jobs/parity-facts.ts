@@ -222,7 +222,7 @@ async function walk(
       out.findings.push(
         problem(
           `the submodule tree is deeper than ${String(MAX_PARITY_NODES)} repositories`,
-          "The walk stopped: a workspace this deep is a configuration mistake, and reading it all would hold the mirrors open indefinitely (§3.3).",
+          "The walk stopped: a workspace this deep is a configuration mistake, and reading it all would hold the mirrors open indefinitely. Take the nested repos you do not need out of the workspace.",
         ),
       );
       return out;

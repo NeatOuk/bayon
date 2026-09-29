@@ -25,6 +25,8 @@ export {
   type LiveSessionState,
   type NextStepFacts,
   type NextStepHolder,
+  type NextStepReviewing,
+  type NextStepStarting,
   type NextStepTicket,
 } from "./next-step.js";
 export { REASON_MAX } from "./next-step-text.js";

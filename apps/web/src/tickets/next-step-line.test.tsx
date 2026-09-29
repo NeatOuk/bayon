@@ -277,3 +277,90 @@ test("a hint is text, and a move the laws no longer allow shows no button", asyn
   renderWithProviders(<TicketScreen num={812} />);
   expect(within(await line()).queryByRole("button")).toBeNull();
 });
+
+// a new ticket starts in one step, through the operator's own two doors in order.
+const START = {
+  waiting_on: "orchestrator",
+  reason:
+    "Waiting for the orchestrator to prioritise it (it wakes only when other work is due)",
+  action: { kind: "start", label: "Start work" },
+} as const;
+const STAFFED = {
+  command_id: "cmd-1",
+  session_id: "sess-1",
+  created: true,
+  agent_id: "agent-1",
+  role: "builder",
+  run_class: "spike",
+  handoff_id: null,
+  ticket_status: "staffed",
+};
+
+test("Start work on a backlog ticket prioritises it with If-Match, then staffs a builder", async () => {
+  const fetchMock = stubFetch({
+    [DETAIL]: detailWith(
+      START,
+      {},
+      ticketView({ num: 812, status: "backlog", version: 1 }),
+    ),
+    [`${DETAIL}/transition`]: ticketView({
+      num: 812,
+      status: "prioritized",
+      version: 2,
+    }),
+    [`${DETAIL}/staff`]: STAFFED,
+  });
+  renderWithProviders(<TicketScreen num={812} />);
+  const next = await line();
+  await userEvent.click(
+    within(next).getByRole("button", { name: "Start work" }),
+  );
+  await waitFor(() =>
+    expect(callsTo(fetchMock, `${DETAIL}/staff`, "POST")).toHaveLength(1),
+  );
+  expect(bodyOf(fetchMock, `${DETAIL}/transition`, "POST")).toEqual({
+    to: "prioritized",
+  });
+  const [, init] = callsTo(fetchMock, `${DETAIL}/transition`, "POST")[0] ?? [];
+  expect(new Headers(init?.headers).get("If-Match")).toBe('"1"');
+  expect(bodyOf(fetchMock, `${DETAIL}/staff`, "POST")).toEqual({
+    role: "builder",
+  });
+  // Posted in that order: the staffing takes the prioritized ticket.
+  const order = fetchMock.mock.calls
+    .filter(([, i]) => i?.method === "POST")
+    .map(([url]) => String(url));
+  expect(order).toEqual([`${DETAIL}/transition`, `${DETAIL}/staff`]);
+});
+
+test("Start work on a prioritized ticket only staffs; a refusal reads in plain words", async () => {
+  const fetchMock = stubFetch({
+    [DETAIL]: detailWith(
+      { ...START, waiting_on: "you", reason: "Prioritised" },
+      {},
+      ticketView({ num: 812, status: "prioritized", version: 2 }),
+    ),
+    [`${DETAIL}/staff`]: () =>
+      Response.json(
+        {
+          error: {
+            class: "admission_refused",
+            message:
+              "no_agent: no enabled builder in project demo has a free slot",
+            retryable: true,
+          },
+        },
+        { status: 429 },
+      ),
+  });
+  renderWithProviders(<TicketScreen num={812} />);
+  const next = await line();
+  await userEvent.click(
+    within(next).getByRole("button", { name: "Start work" }),
+  );
+  const alert = await within(next).findByRole("alert");
+  expect(alert.textContent).toBe(
+    "No enabled builder in project demo has a free slot.",
+  );
+  expect(callsTo(fetchMock, `${DETAIL}/transition`, "POST")).toHaveLength(0);
+});

@@ -168,7 +168,7 @@ export async function openRelayServer(
     return fail(
       "validation",
       `relay socket path ${o.path} is ${bytes} bytes; a unix socket path must fit in ` +
-        `${SOCKET_PATH_MAX_BYTES} bytes with its NUL: use a shorter FRM_HOME`,
+        `${SOCKET_PATH_MAX_BYTES} bytes with its NUL; socketDir moves a long home's sockets to a short private dir, so this path did not come from it`,
     );
   }
   const registry = new Map<string, Registration>();

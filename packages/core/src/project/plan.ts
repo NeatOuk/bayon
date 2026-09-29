@@ -1,5 +1,11 @@
 import { err, ok, type Result } from "../errors.js";
 import { isReservedRepoId } from "../mirrors.js";
+import {
+  displayUrl,
+  repoTokenSecret,
+  storeSecretCommand,
+  type StoreHint,
+} from "./repo-reach.js";
 
 // The rows `frm project add` and `POST /projects` both write: a repo, a workspace, its
 // one workspace_repo, a build profile and builder agent, and unless suppressed an orchestrate
@@ -45,13 +51,56 @@ export function checkProjectName(name: string): Result<void> {
   return ok(undefined);
 }
 
-/** `repoUrl`'s shape: https, `ssh://`, or scp-style only (§14; the route's own refusal). */
-export function checkOriginUrl(repoUrl: string): Result<void> {
-  return ORIGIN_URL.test(repoUrl)
-    ? ok(undefined)
-    : invalid(
-        `repo url ${JSON.stringify(repoUrl)} must be https, ssh:// or user@host:path`,
-      );
+/**
+ * Why `url` carries a credential, or null: any userinfo in an https URL, a
+ * password in an `ssh://` one. An ssh user (`ssh://git@host`, `git@host:path`) is not a secret.
+ */
+function urlCredential(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const u = new URL(url);
+  if (u.protocol === "https:" || u.protocol === "http:") {
+    return u.username !== "" || u.password !== "";
+  }
+  return u.protocol === "ssh:" && u.password !== "";
+}
+
+/** Where a credential for `url` belongs instead of the URL, with the command that stores it. */
+function credentialPlace(url: string, hint: StoreHint | null): string {
+  const secret = repoTokenSecret(url.replace(/\/\/[^/?#]*@/, "//"));
+  if (secret === null) {
+    return "Bayon keeps a token only for the forges it knows: use the repository's ssh URL, with a key on this machine, instead.";
+  }
+  const command = storeSecretCommand(secret, hint);
+  return command === null
+    ? `store it as ${secret} in the host secret store instead.`
+    : `store it as ${secret} instead: ${command}`;
+}
+
+/**
+ * `repoUrl`'s shape (§14; the route's own refusal): https, `ssh://`, or scp-style only — not plain
+ * http, which no token is ever sent over and whose answer anyone on the path can change — and no
+ * password or token inside the URL, which would be stored, shown and logged with it ( * review M2, M3). The message never repeats a URL that carries one.
+ */
+export function checkOriginUrl(
+  repoUrl: string,
+  hint: StoreHint | null = null,
+): Result<void> {
+  if (!ORIGIN_URL.test(repoUrl)) {
+    return invalid(
+      `repo url ${JSON.stringify(displayUrl(repoUrl))} must be https, ssh:// or user@host:path`,
+    );
+  }
+  if (urlCredential(repoUrl)) {
+    return invalid(
+      `Don't put a password or token in the URL: ${credentialPlace(repoUrl, hint)}`,
+    );
+  }
+  if (/^http:\/\//i.test(repoUrl)) {
+    return invalid(
+      `${displayUrl(repoUrl)} is plain http: Bayon never sends a token over it, and anyone on the way can change what it answers. Use the repository's https or ssh URL.`,
+    );
+  }
+  return ok(undefined);
 }
 
 /** The name and url shape checks `POST /projects` runs before writing anything, less its folder

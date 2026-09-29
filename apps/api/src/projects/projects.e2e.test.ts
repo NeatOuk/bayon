@@ -32,12 +32,14 @@ import {
   ProjectSettingsState,
   ProjectsView,
   PushTargetsDetected,
+  RepoCheckView,
   type CreateProjectRequest,
 } from "@bayon/proto";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { dbStore } from "../db-store.js";
 import { startApi, type RunningApi } from "../server.js";
 import { ProjectsService } from "./projects-service.js";
+import { rateLimit } from "./rate-limit.js";
 
 const TOKEN = "e2e-projects-0123456789abcdef";
 
@@ -217,6 +219,8 @@ test("GET /projects lists a created project with its repo, agents and open ticke
       expect.objectContaining({ id: "e2e-list-reviewer", kind: "reviewer" }),
     ],
     open_tickets: 0,
+    has_builder: true,
+    has_reviewer: true,
     paused: false,
     staff_approval: false,
     jira: null,
@@ -857,5 +861,108 @@ describe("context compression", () => {
       "validation",
     );
     expect(await listed("e2e-ctx")).toBe(false);
+  });
+});
+
+describe("POST /projects/repo-check", () => {
+  test("answers 200 in plain words; with no probe wired, nothing was checked", async () => {
+    const res = await call("POST", "/projects/repo-check", {
+      repo_url: "https://example.com/e2e1.git",
+    });
+    expect(res.status).toBe(200);
+    expect(RepoCheckView.parse(await res.json())).toMatchObject({
+      ok: false,
+      outcome: null,
+      message: expect.stringContaining("the supervisor did not answer"),
+    });
+  });
+
+  test("a folder, a malformed URL or an unknown field is 400", async () => {
+    await expectError(
+      await call("POST", "/projects/repo-check", { repo_url: "/srv/code" }),
+      400,
+      "validation",
+    );
+    await expectError(
+      await call("POST", "/projects/repo-check", { repo_url: "ftp://x/y" }),
+      400,
+      "validation",
+    );
+    await expectError(
+      await call("POST", "/projects/repo-check", {
+        repo_url: "https://example.com/x.git",
+        token: "no",
+      }),
+      400,
+      "validation",
+    );
+  });
+});
+
+describe("the routes that reach a remote are rate limited per bearer (H1)", () => {
+  test("past the limit, 429 in plain words, and nothing is asked", async () => {
+    const limited = await startApi({
+      config: { token: TOKEN, host: "127.0.0.1", port: 0 },
+      store: dbStore(apiDb),
+      clock: systemClock,
+      logger: false,
+      projects: new ProjectsService({
+        db: apiDb,
+        clock: systemClock,
+        mirrorsRoot: "/home/frm/mirrors",
+        remoteLimit: rateLimit(systemClock, 2),
+      }),
+    });
+    try {
+      const check = () =>
+        fetch(`${limited.url}/projects/repo-check`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${TOKEN}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ repo_url: "https://example.com/x.git" }),
+        });
+      expect((await check()).status).toBe(200);
+      expect((await check()).status).toBe(200);
+      const refused = await check();
+      const error = await expectError(refused, 429, "admission_refused");
+      expect(error.message).toContain("Too many repository checks");
+    } finally {
+      await limited.close();
+    }
+  });
+});
+
+describe("POST /projects refuses a URL before anything waits on the network (M3)", () => {
+  test.each([
+    [
+      "a token in the URL",
+      "https://x-access-token:ghp_x@github.com/a/b.git",
+      "Don't put a password or token in the URL",
+    ],
+    ["plain http", "http://example.com/a/b.git", "is plain http"],
+    [
+      "a private host",
+      "https://192.168.1.20/a/b.git",
+      "projects.private_repo_hosts",
+    ],
+    [
+      "a metadata address",
+      "https://169.254.169.254/a/b.git",
+      "link-local or cloud metadata",
+    ],
+  ])("%s", async (_what, repoUrl, says) => {
+    const error = await expectError(
+      await call("POST", "/projects", {
+        ...REQUEST,
+        name: "e2e-refused-url",
+        repo_url: repoUrl,
+      }),
+      400,
+      "validation",
+    );
+    expect(error.message).toContain(says);
+    expect(error.message).not.toContain("ghp_x");
   });
 });

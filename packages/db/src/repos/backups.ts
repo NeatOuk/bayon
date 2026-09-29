@@ -82,3 +82,21 @@ export async function getLastBackup(db: Db): R<BackupRow | null> {
   );
   return found.ok ? ok(found.value ?? null) : found;
 }
+
+/**
+ * Whether an ok backup was ever recorded: a missing key before the first is "not set up yet", one
+ * after it is a failure (the key was set up and is gone), which the nightly job records as such.
+ */
+export async function hasOkBackup(db: Db): R<boolean> {
+  const found = await read(db, (ix) =>
+    first(
+      ix,
+      qb
+        .selectFrom("backups")
+        .select("id")
+        .where("outcome", "=", "ok")
+        .limit(1),
+    ),
+  );
+  return found.ok ? ok(found.value !== undefined) : found;
+}

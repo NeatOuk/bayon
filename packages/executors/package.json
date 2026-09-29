@@ -18,6 +18,11 @@
       "types": "./dist/contract.d.ts",
       "default": "./dist/contract.js"
     },
+    "./install": {
+      "@bayon/source": "./src/install-entry.ts",
+      "types": "./dist/install-entry.d.ts",
+      "default": "./dist/install-entry.js"
+    },
     "./secret-file": {
       "@bayon/source": "./src/secret-file.ts",
       "types": "./dist/secret-file.d.ts",

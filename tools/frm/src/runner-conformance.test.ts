@@ -1,10 +1,17 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { systemClock } from "@bayon/core";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
 import {
   runnerConformance,
   type ConformanceCliOptions,
 } from "./runner-conformance.js";
 import type { Fetch } from "./smoke/api-client.js";
+
+// Every run names a temp FRM_HOME: frm's API URL and bearer come from the home, never ~/.foreman.
+const HOME = mkdtempSync(join(tmpdir(), "frm-conformance-"));
+afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
 const OPTIONS: ConformanceCliOptions = {
   runnerId: "fixture",
@@ -82,13 +89,38 @@ function run(
 ) {
   const lines: string[] = [];
   return runnerConformance(OPTIONS, {
-    env,
+    env: { FRM_HOME: HOME, ...env },
     clock: systemClock,
     out: (l) => lines.push(l),
     fetch,
     pollMs: 1,
   }).then((code) => ({ code, lines }));
 }
+
+test("no FRM_API_URL: the API is this home's own, at its install.json port", async () => {
+  const home = mkdtempSync(join(tmpdir(), "frm-conformance-port-"));
+  try {
+    writeFileSync(
+      join(home, "install.json"),
+      JSON.stringify({
+        version: 1,
+        api: { host: "127.0.0.1", port: 3011 },
+        web: { port: 5174 },
+      }),
+    );
+    const fake = api([command("done", { result: RESULT })]);
+    const { code } = await run(fake.fetch, {
+      FRM_HOME: home,
+      FRM_API_TOKEN: "t0ken",
+    });
+    expect(code).toBe(0);
+    expect(fake.calls[0]?.url).toBe(
+      "http://127.0.0.1:3011/api/v1/runners/fixture/conformance",
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 
 test("posts the command, waits while it is claimed, then prints the report path and verdict", async () => {
   const fake = api([command("claimed"), command("done", { result: RESULT })]);
@@ -131,7 +163,11 @@ test("--compression asks for a compression run and says what it stored", async (
   const code = await runnerConformance(
     { ...OPTIONS, compression: true },
     {
-      env: { FRM_API_TOKEN: "t0ken", FRM_API_URL: "http://api.test/" },
+      env: {
+        FRM_HOME: HOME,
+        FRM_API_TOKEN: "t0ken",
+        FRM_API_URL: "http://api.test/",
+      },
       clock: systemClock,
       out: (l) => lines.push(l),
       fetch: fake.fetch,
@@ -268,7 +304,7 @@ test("a failed command, a refused POST, no token and the deadline each fail loud
   const late = await runnerConformance(
     { ...OPTIONS, timeoutMs: 1 },
     {
-      env: { FRM_API_TOKEN: "t" },
+      env: { FRM_HOME: HOME, FRM_API_TOKEN: "t" },
       clock: systemClock,
       out: (l) => lines.push(l),
       fetch: api([command("claimed")]).fetch,
@@ -335,7 +371,13 @@ const RUNNERS = {
 };
 
 /** A fake API by route: GET /runners, then each POST's command done at once with its model. */
-function routed(runners: object = RUNNERS) {
+function routed(
+  runners: object = RUNNERS,
+  resultFor: (modelId: string) => object = (modelId) => ({
+    ...RESULT,
+    model_id: modelId,
+  }),
+) {
   const posts: unknown[] = [];
   const fetch: Fetch = async (url, init) => {
     if (url.endsWith("/runners")) return Response.json(runners);
@@ -348,102 +390,163 @@ function routed(runners: object = RUNNERS) {
     }
     const n = Number(url.split("/C").at(-1));
     const body = posts[n - 1] as { model_id: string };
-    return Response.json(
-      command("done", { result: { ...RESULT, model_id: body.model_id } }),
-    );
+    return Response.json(command("done", { result: resultFor(body.model_id) }));
   };
   return { fetch, posts };
 }
 
-test("no --model: every model a role binding runs is certified, one after another", async () => {
-  const fake = routed();
+/** `frm runner conformance fixture` with no --model against `runners`: its exit, POSTs and lines. */
+async function noModel(
+  runners: object = RUNNERS,
+  runnerId = "fixture",
+  resultFor?: (modelId: string) => object,
+) {
+  const fake = routed(runners, resultFor);
   const lines: string[] = [];
   const code = await runnerConformance(
+    { runnerId, executorId: "local", compression: false, timeoutMs: 5_000 },
     {
-      runnerId: "fixture",
-      executorId: "local",
-      compression: false,
-      timeoutMs: 5_000,
-    },
-    {
-      env: { FRM_API_TOKEN: "t" },
+      env: { FRM_HOME: HOME, FRM_API_TOKEN: "t" },
       clock: systemClock,
       out: (l) => lines.push(l),
       fetch: fake.fetch,
       pollMs: 1,
     },
   );
+  return { code, posts: fake.posts, lines };
+}
+
+/** RUNNERS with each model's bound_roles as `uses` says (none when absent). */
+const usedAs = (
+  uses: Readonly<Record<string, readonly string[]>>,
+  kind = "script",
+) => ({
+  runners: RUNNERS.runners.map((r) => ({
+    ...r,
+    kind,
+    models: r.models.map((m) => ({ ...m, bound_roles: uses[m.id] ?? [] })),
+  })),
+});
+
+test("no --model: every model in use is certified, one after another, each named with its uses", async () => {
+  const { code, posts, lines } = await noModel();
   expect(code).toBe(0);
-  expect(fake.posts).toEqual([
+  expect(posts).toEqual([
     { executor_id: "local", model_id: "fixture.complex" },
     { executor_id: "local", model_id: "fixture.cheap" },
   ]);
+  expect(lines[0]).toBe(
+    "models   fixture.complex (used by code_reviewer) · fixture.cheap (used by builder)",
+  );
   expect(lines.filter((l) => l.startsWith("stored"))).toEqual([
     "stored   (fixture, local, fixture.complex) is certified as of runner 1",
     "stored   (fixture, local, fixture.cheap) is certified as of runner 1",
   ]);
 });
 
-test("no --model and no role binds a model of the runner: it says to pass --model, and runs nothing", async () => {
-  const unbound = {
-    runners: RUNNERS.runners.map((r) => ({
-      ...r,
-      models: r.models.map((m) => ({ ...m, bound_roles: [] })),
-    })),
-  };
-  const fake = routed(unbound);
-  const lines: string[] = [];
-  const code = await runnerConformance(
-    {
-      runnerId: "fixture",
-      executorId: "local",
-      compression: false,
-      timeoutMs: 5_000,
-    },
-    {
-      env: { FRM_API_TOKEN: "t" },
-      clock: systemClock,
-      out: (l) => lines.push(l),
-      fetch: fake.fetch,
-      pollMs: 1,
-    },
+test("no --model, two models in use: the first fails, the second still runs and is certified, and the exit is 1", async () => {
+  const { code, posts, lines } = await noModel(RUNNERS, "fixture", (modelId) =>
+    modelId === "fixture.complex"
+      ? {
+          ...RESULT,
+          model_id: modelId,
+          passed_at: null,
+          summary: { ...SUMMARY, failed: [9] },
+        }
+      : { ...RESULT, model_id: modelId },
   );
   expect(code).toBe(1);
-  expect(fake.posts).toEqual([]);
+  expect(posts).toEqual([
+    { executor_id: "local", model_id: "fixture.complex" },
+    { executor_id: "local", model_id: "fixture.cheap" },
+  ]);
+  expect(lines.filter((l) => l.startsWith("stored"))).toEqual([
+    "stored   (fixture, local, fixture.complex) as of runner 1: stored, not certified (1 failed)",
+    "stored   (fixture, local, fixture.cheap) is certified as of runner 1",
+  ]);
+});
+
+test("no --model on a new project's runner: its agents' model is the one certified", async () => {
+  const { code, posts, lines } = await noModel(
+    usedAs({
+      "fixture.standard": [
+        "demo · demo-builder-1 agent",
+        "demo · demo-reviewer-1 agent",
+      ],
+    }),
+  );
+  expect(code).toBe(0);
+  expect(posts).toEqual([
+    { executor_id: "local", model_id: "fixture.standard" },
+  ]);
+  expect(lines[0]).toBe(
+    "models   fixture.standard (used by demo · demo-builder-1 agent, demo · demo-reviewer-1 agent)",
+  );
+});
+
+test("no --model and nothing uses a model of the runner: its default model is certified, and it says so", async () => {
+  const { code, posts, lines } = await noModel(usedAs({}));
+  expect(code).toBe(0);
+  expect(posts).toEqual([
+    { executor_id: "local", model_id: "fixture.standard" },
+  ]);
+  expect(lines[0]).toBe(
+    "models   fixture.standard: no project, agent or role uses a model of fixture yet, so its default (the standard tier)",
+  );
+});
+
+test("no --model, nothing in use and no standard tier: the first active model is the default", async () => {
+  const noStandard = {
+    runners: usedAs({}).runners.map((r) => ({
+      ...r,
+      models: r.models.filter((m) => m.tier !== "standard"),
+    })),
+  };
+  const { code, posts, lines } = await noModel(noStandard);
+  expect(code).toBe(0);
+  expect(posts).toEqual([
+    { executor_id: "local", model_id: "fixture.complex" },
+  ]);
+  expect(lines[0]).toBe(
+    "models   fixture.complex: no project, agent or role uses a model of fixture yet, so its default (its first active model)",
+  );
+});
+
+test("no --model on a runner with no active model: nothing to certify, and nothing runs", async () => {
+  const none = {
+    runners: RUNNERS.runners.map((r) => ({ ...r, models: [] })),
+  };
+  const { code, posts, lines } = await noModel(none);
+  expect(code).toBe(1);
+  expect(posts).toEqual([]);
   expect(lines).toEqual([
-    "FAIL  no role binding or project step tier runs a model of fixture: pass --model <id> (one of fixture.complex, fixture.standard, fixture.cheap)",
+    "FAIL  runner fixture has no active model, so there is nothing to certify",
+  ]);
+});
+
+test("a job runner is never certified: the supervisor's own job is not an agent", async () => {
+  const { code, posts, lines } = await noModel(usedAs({}, "job"));
+  expect(code).toBe(1);
+  expect(posts).toEqual([]);
+  expect(lines).toEqual([
+    "FAIL  runner fixture is one of the supervisor's own jobs, not an agent runner: there is nothing to certify",
+  ]);
+});
+
+test("an unknown runner is named", async () => {
+  const { code, lines } = await noModel(RUNNERS, "nope");
+  expect(code).toBe(1);
+  expect(lines).toEqual([
+    "FAIL  no runner nope: the Runners page lists the ones there are",
   ]);
 });
 
 test("no --model: a model only a project's step tier runs is certified too", async () => {
-  // As GET /runners lists it: no role binds the standard model, project P's build step does.
-  const stepOnly = {
-    runners: RUNNERS.runners.map((r) => ({
-      ...r,
-      models: r.models.map((m) => ({
-        ...m,
-        bound_roles: m.id === "fixture.standard" ? ["P · build step"] : [],
-      })),
-    })),
-  };
-  const fake = routed(stepOnly);
-  const code = await runnerConformance(
-    {
-      runnerId: "fixture",
-      executorId: "local",
-      compression: false,
-      timeoutMs: 5_000,
-    },
-    {
-      env: { FRM_API_TOKEN: "t" },
-      clock: systemClock,
-      out: () => undefined,
-      fetch: fake.fetch,
-      pollMs: 1,
-    },
+  const { code, posts } = await noModel(
+    usedAs({ "fixture.standard": ["P · build step"] }),
   );
   expect(code).toBe(0);
-  expect(fake.posts).toEqual([
+  expect(posts).toEqual([
     { executor_id: "local", model_id: "fixture.standard" },
   ]);
 });

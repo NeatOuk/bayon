@@ -341,7 +341,7 @@ describe("runProjectAddCommand", () => {
     ).toContain("app1-reviewer");
     // The fixture declares no structured output: plan reviews only, and the owner is told so.
     expect(r.out).toContain(
-      "warning     fixture has no structured output: plan reviews will run, but code reviews need a runner with structured output bound to code_reviewer",
+      "warning     fixture cannot review code (it has no structured output), so only plan reviews will run: pass --reviewer-runner with a runner that has structured output",
     );
     expect(unwrap(await getRepo(t.db, "app1"))).toMatchObject({
       origin_url: REPO,

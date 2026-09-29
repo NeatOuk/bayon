@@ -109,7 +109,7 @@ function worktreeFindings(f: ParityFacts): ReviewFinding[] {
       return [
         blocker(
           `repo ${repo.repoId} of this workspace has no active worktree on the ticket`,
-          "Every repo of a multi-repo workspace is worked and reviewed in its own worktree; one with none was never touched, so nothing of it can have been reviewed (§3.1).",
+          "Every repo of a multi-repo workspace is worked and reviewed in its own worktree; one with none was never touched, so nothing of it can have been reviewed. Run a session on the ticket that is not pinned to one repo, so every repo gets its worktree, or take this repo out of the workspace.",
         ),
       ];
     }
@@ -131,7 +131,7 @@ function gitlinkFindings(f: ParityFacts): ReviewFinding[] {
       return [
         blocker(
           `the gitlink at ${JSON.stringify(link.path)} is not a repo of this workspace`,
-          `The superproject's tree records a submodule commit at ${JSON.stringify(link.path)}, but no workspace_repos row declares submodule_path ${JSON.stringify(link.path)}. Add the repos row and the workspace_repos row, or drop the submodule (§3.1).`,
+          `The superproject's tree records a submodule commit at ${JSON.stringify(link.path)}, but no repo of this workspace is declared at that path. Add the repo to the workspace as the submodule at ${JSON.stringify(link.path)}, or drop the submodule.`,
         ),
       ];
     }
@@ -140,7 +140,7 @@ function gitlinkFindings(f: ParityFacts): ReviewFinding[] {
       : [
           blocker(
             `submodule commit ${short(link.sha)} at ${JSON.stringify(link.path)} is not in repo ${link.repoId}'s mirror`,
-            `The gitlink is ${link.sha}. A gitlink the child's mirror does not hold leaves the superproject pointing at a commit nobody else can read (§3.3).`,
+            `The gitlink is ${link.sha}. A gitlink the child's mirror does not hold leaves the superproject pointing at a commit nobody else can read. Publish that commit to the child repo's mirror.`,
           ),
         ];
   });
@@ -164,15 +164,15 @@ function declarationFindings(f: ParityFacts): ReviewFinding[] {
       .map((path) =>
         blocker(
           `.gitmodules names ${JSON.stringify(path)}, which no repo of this workspace declares`,
-          "workspace_repos.submodule_path is the workspace's declaration of its submodules; a path only .gitmodules knows is materialized by nobody (§3.1).",
+          "The workspace declares its own submodules, and a path only .gitmodules knows is checked out by nobody. Add the repo to the workspace at that path, or remove it from .gitmodules.",
         ),
       ),
     ...declared
       .filter((d) => !inGit.has(d.path))
       .map((d) =>
         blocker(
-          `repo ${d.repoId} declares submodule_path ${JSON.stringify(d.path)}, which .gitmodules does not name`,
-          "The workspace declares a submodule the superproject's commit has no .gitmodules entry for: the declaration and the tree have drifted apart (§3.1).",
+          `repo ${d.repoId} is declared as the submodule at ${JSON.stringify(d.path)}, which .gitmodules does not name`,
+          "The workspace declares a submodule the superproject's commit has no .gitmodules entry for: the declaration and the tree have drifted apart. Add the entry to .gitmodules, or take the repo's submodule path off the workspace.",
         ),
       ),
   ];

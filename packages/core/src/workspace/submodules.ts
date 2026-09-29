@@ -167,7 +167,7 @@ export function childrenOf(
     const row = declared.find((d) => d.path === path);
     if (row === undefined) {
       return invalid(
-        `submodule ${JSON.stringify(path)} (url ${JSON.stringify(entry.url ?? "")}) of ${at} is not a repo of this workspace: add a repos row and a workspace_repos row with submodule_path ${JSON.stringify(path)}`,
+        `submodule ${JSON.stringify(path)} (url ${JSON.stringify(entry.url ?? "")}) of ${at} is not a repo of this workspace: add its repo to the workspace as the submodule at ${JSON.stringify(path)}`,
       );
     }
     children.push({

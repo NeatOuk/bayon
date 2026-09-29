@@ -62,54 +62,84 @@ test("a click POSTs {role: builder} and refreshes the ticket on success", async 
   });
 });
 
-test("Staff builder disables itself and names the holder when a live session already works the ticket", async () => {
-  stubFetch({
-    [FLEET]: fleet([
-      fleetRow({
-        id: "s-live",
-        agent: "bayon-builder",
-        state: "idle",
-        ticket: 7,
-      }),
-    ]),
-  });
+// the holder is the detail's own, read with the next step, never the fleet's: the two
+// were read at different moments and the page said "held" beside "no session holds it".
+test("Staff builder disables itself and names the holder when a live session already works the ticket", () => {
   renderWithProviders(
     <TicketActions
       ticket={ticketView({ num: 7, status: "staffed" })}
       transitions={[]}
+      holder={{
+        kind: "session",
+        agent: "bayon-builder",
+        session_id: "s-live",
+        state: "idle",
+      }}
     />,
   );
-  const button = (await screen.findByRole("button", {
+  const button = screen.getByRole("button", {
     name: "Staff builder",
-  })) as HTMLButtonElement;
-  await waitFor(() => expect(button.disabled).toBe(true));
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
   expect(screen.getByText(/Held by bayon-builder \(Idle\)/)).toBeTruthy();
   const link = screen.getByRole("link", { name: "session" });
   expect(link.getAttribute("href")).toBe("#/sessions/s-live");
 });
 
-test("Staff builder stays enabled when the fleet shows no session on this ticket", async () => {
-  const fetchMock = stubFetch({
-    [FLEET]: fleet([fleetRow({ id: "s-other", ticket: 99 })]),
+test("Staff builder waits, and says so, while the staffed session is starting", () => {
+  renderWithProviders(
+    <TicketActions
+      ticket={ticketView({ num: 7, status: "staffed" })}
+      transitions={[]}
+      holder={{ kind: "queued", agent: "bayon-builder" }}
+    />,
+  );
+  const button = screen.getByRole("button", {
+    name: "Staff builder",
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(
+    screen.getByText("Starting a session for bayon-builder…"),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Held by/)).toBeNull();
+});
+
+// Review M1: staffing counts a live reviewer, so the button must not offer what it will refuse.
+test("Staff builder waits for a reviewer still finishing on the ticket", () => {
+  renderWithProviders(
+    <TicketActions
+      ticket={ticketView({ num: 7, status: "review_fix" })}
+      transitions={[]}
+      reviewing={{ agent: "bayon-reviewer", session_id: "s-rev" }}
+    />,
+  );
+  const button = screen.getByRole("button", {
+    name: "Staff builder",
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(
+    screen.getByText(
+      "A reviewer is still finishing on this ticket: wait for it.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Held by/)).toBeNull();
+});
+
+test("Staff builder stays enabled when nothing holds the ticket, whatever the fleet shows", async () => {
+  stubFetch({
+    [FLEET]: fleet([fleetRow({ id: "s-other", ticket: 7 })]),
   });
   renderWithProviders(
     <TicketActions
       ticket={ticketView({ num: 7, status: "staffed" })}
       transitions={[]}
+      holder={null}
     />,
   );
-  // Wait for the real fleet response to resolve, not just for fetch to have been called (a call
-  // is recorded synchronously, before react-query has applied the data) — otherwise this assertion
-  // could pass before heldBy ever ran against real data, hiding a broken match.
-  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  await fetchMock.mock.results[0]?.value;
-  await waitFor(() => {
-    const button = screen.getByRole("button", {
-      name: "Staff builder",
-    }) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-  });
-  // The footnote a match would render is absent: proof this ran against real, non-matching data.
+  const button = screen.getByRole("button", {
+    name: "Staff builder",
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false);
   expect(screen.queryByText(/Held by/)).toBeNull();
 });
 
@@ -120,7 +150,8 @@ test("a 409 shows the server's message without navigating away", async () => {
         {
           error: {
             class: "conflict",
-            message: "not_staffable: already staffed",
+            message:
+              "not_staffable: ticket #7 is already held by a live session (idle); stop it or wait for it to finish",
             retryable: false,
           },
         },
@@ -136,7 +167,10 @@ test("a 409 shows the server's message without navigating away", async () => {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Staff builder" }));
   const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toContain("not_staffable: already staffed");
+  // Its reason code dropped: the detail is written for a reader.
+  expect(alert.textContent).toBe(
+    "Ticket #7 is already held by a live session (idle); stop it or wait for it to finish.",
+  );
 });
 
 test("a retried staff click reuses its Idempotency-Key, so the server can refuse the second spawn", async () => {
@@ -200,8 +234,14 @@ test("a move refused for a missing plan offers the path, and setting it PATCHes 
       transitions={[SUBMIT_PLAN]}
     />,
   );
-  // The refusal still says why, and now stands beside what to do about it.
-  expect(screen.getByText(/plan_path is not set/)).toBeTruthy();
+  // The refusal still says why, and now stands beside what to do about it; the law's words are
+  // the note's title.
+  const note = screen.getByText(
+    "The plan file isn't there: set the plan path.",
+  );
+  expect(note.getAttribute("title")).toBe(
+    "submit_plan (missing_artifact): plan_path is not set",
+  );
   const field = screen.getByLabelText("Plan path");
   expect(field.getAttribute("placeholder")).toBe("docs/spikes/FRM-3.md");
 

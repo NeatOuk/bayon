@@ -1,6 +1,9 @@
 import {
+  PRIVATE_REPO_HOSTS_KEY,
+  PrivateRepoHosts,
   checkOriginUrl,
   checkProjectName,
+  repoHostProblem,
   err,
   ok,
   projectIds,
@@ -8,12 +11,14 @@ import {
   type Clock,
   type FrmError,
   type Result,
+  type StoreHint,
 } from "@bayon/core";
 import {
   agentModels,
   getExecutor,
   getRepo,
   getRunner,
+  getSettings,
   getWorkspace,
   deliveryConfigOf,
   docsSourceOf,
@@ -40,6 +45,8 @@ import {
   type ProjectCreated,
   type ProjectsView,
   type PushTargetsDetected,
+  type RepoCheckRequest,
+  type RepoCheckView,
 } from "@bayon/proto";
 import type { NewTicket } from "@bayon/db/api";
 import { parseAs } from "../dto.js";
@@ -57,6 +64,8 @@ import { addProjectAgent, patchAgent } from "./project-agents.js";
 import { toNewProject, toProjectPlanInput } from "./project-plan.js";
 import { docsView } from "../docs/view.js";
 import { qaHarnessTicket, qaView } from "./qa-harness-ticket.js";
+import { RATE_LIMITED, type RateLimit } from "./rate-limit.js";
+import { notCheckedText, repoCheckView, type RepoProbe } from "./repo-probe.js";
 
 // POST /projects (§9.5 amendment): every refusal in the ticket's list is checked, and
 // writes nothing, before `createProject` runs. A class over {db, clock}, as GateService and
@@ -70,6 +79,24 @@ export interface ProjectsServiceDeps {
   readonly mirrorsRoot: string | null;
   /** How git is run to read a folder's own origin (039); tests may hand in their own. */
   readonly git?: GitRunner;
+  /**
+   * Whether a URL's repo can be read, asked of the supervisor. Absent: a URL is taken
+   * unchecked, as before — only boot wires the command-backed probe.
+   */
+  readonly repoProbe?: RepoProbe;
+  /** This install's secret store, for the command a refusal names; never a value. */
+  readonly storeHint?: StoreHint | null;
+  /**
+   * The per-bearer limit on the routes that reach a remote (review H1). Absent: none — only boot
+   * wires the real one, as it does the probe.
+   */
+  readonly remoteLimit?: RateLimit;
+}
+
+/** What the remote check decided for a create: the base to use, and anything to warn about. */
+interface Probed {
+  readonly base: string | undefined;
+  readonly warnings: readonly string[];
 }
 
 /** An absolute path is a folder on this host, judged by `projects.local_roots` (§14); anything
@@ -96,19 +123,103 @@ export class ProjectsService {
   readonly #clock: Clock;
   readonly #mirrorsRoot: string | null;
   readonly #git: GitRunner;
+  readonly #repoProbe: RepoProbe | null;
+  readonly #storeHint: StoreHint | null;
+  readonly #remoteLimit: RateLimit | null;
 
   constructor(deps: ProjectsServiceDeps) {
     this.#db = deps.db;
     this.#clock = deps.clock;
     this.#mirrorsRoot = deps.mirrorsRoot;
     this.#git = deps.git ?? runGit();
+    this.#repoProbe = deps.repoProbe ?? null;
+    this.#storeHint = deps.storeHint ?? null;
+    this.#remoteLimit = deps.remoteLimit ?? null;
+  }
+
+  /** One more call to a route that reaches a remote, for `bearer`: `admission_refused` past it. */
+  admitRemoteCall(bearer: string | undefined): Result<void> {
+    return this.#remoteLimit === null || this.#remoteLimit.take(bearer)
+      ? ok(undefined)
+      : err(RATE_LIMITED);
+  }
+
+  /**
+   * `POST /projects/repo-check`: whether a https or ssh URL's repo can be read the way
+   * the first session's clone will read it, in plain words. Writes nothing but the command row. A
+   * folder is `/folders/check`'s.
+   */
+  async checkRepo(body: RepoCheckRequest): Promise<Result<RepoCheckView>> {
+    if (isFolder(body.repo_url)) {
+      return invalid("a folder is checked by POST /folders/check");
+    }
+    const shape = await this.#checkUrl(body.repo_url);
+    if (!shape.ok) return shape;
+    const found =
+      this.#repoProbe === null
+        ? ok(null)
+        : await this.#repoProbe.check(body.repo_url, body.base_branch);
+    if (!found.ok) return found;
+    return ok(
+      repoCheckView(
+        body.repo_url,
+        body.base_branch,
+        found.value,
+        this.#storeHint,
+      ),
+    );
+  }
+
+  /**
+   * A URL's repo read before anything is written: refused in plain words when it cannot
+   * be, with its default branch as the base when none was asked. No answer from the supervisor
+   * creates the project anyway, with a warning: the first session's clone says why if it fails.
+   */
+  async #probe(url: string, base: string | undefined): Promise<Result<Probed>> {
+    if (this.#repoProbe === null) return ok({ base, warnings: [] });
+    const found = await this.#repoProbe.check(url, base);
+    if (!found.ok) return found;
+    if (found.value === null) {
+      return ok({ base, warnings: [notCheckedText(url)] });
+    }
+    const view = repoCheckView(url, base, found.value, this.#storeHint);
+    if (!view.ok) {
+      return invalid(
+        view.command === null
+          ? view.message
+          : `${view.message} Run: ${view.command}`,
+      );
+    }
+    return ok({ base: base ?? view.default_branch ?? undefined, warnings: [] });
   }
 
   /** A url as it is; a folder as its real path, branch and submodules. */
   async #source(repoUrl: string): Promise<Result<LocalProject>> {
     if (isFolder(repoUrl)) return localProject(this.#db, repoUrl, this.#git);
-    const url = checkOriginUrl(repoUrl);
+    const url = await this.#checkUrl(repoUrl);
     return url.ok ? ok({ origin: repoUrl, base: null, submodules: [] }) : url;
+  }
+
+  /**
+   * A URL's own refusals, before anything waits on the network (M3): its
+   * shape, no plain http, no credential inside it, and a host that is not link-local, metadata,
+   * loopback or private unless `projects.private_repo_hosts` lists it. The literal host only: the
+   * supervisor judges what it resolves to as well, where git runs.
+   */
+  async #checkUrl(repoUrl: string): Promise<Result<void>> {
+    const shape = checkOriginUrl(repoUrl, this.#storeHint);
+    if (!shape.ok) return shape;
+    const rows = await getSettings(this.#db, [PRIVATE_REPO_HOSTS_KEY]);
+    if (!rows.ok) return rows;
+    const allowed = PrivateRepoHosts.safeParse(
+      rows.value.get(PRIVATE_REPO_HOSTS_KEY) ?? [],
+    );
+    const problem = repoHostProblem(
+      repoUrl,
+      [],
+      allowed.success ? allowed.data : [],
+    );
+    return problem === null ? ok(undefined) : invalid(problem);
   }
 
   /** `POST /projects/:id/agents`: one more builder, reviewer or orchestrator, on the
@@ -257,8 +368,11 @@ export class ProjectsService {
           max_concurrency: a.max_concurrency,
           model: modelOf.get(a.id)?.model ?? null,
           model_id: modelOf.get(a.id)?.model_id ?? null,
+          has_mission: a.mission_id !== null,
         })),
         open_tickets: p.openTickets,
+        has_builder: p.hasBuilder,
+        has_reviewer: p.hasReviewer,
         paused: p.workspace.paused === 1,
         staff_approval: p.workspace.staff_approval === 1,
         jira: jiraSourceOf(p.workspace),
@@ -318,11 +432,20 @@ export class ProjectsService {
     if (executor.value.enabled !== 1) {
       return invalid(`executor ${input.executor} is disabled`);
     }
+    // Last of the refusals, since it is the one that waits on the network.
+    const probed = isFolder(asked.repoUrl)
+      ? ok<Probed>({ base: input.base, warnings: [] })
+      : await this.#probe(origin, input.base);
+    if (!probed.ok) return probed;
+    const checked =
+      probed.value.base === undefined
+        ? input
+        : { ...input, base: probed.value.base };
 
-    const ids = projectIds(input);
+    const ids = projectIds(checked);
     const now = this.#clock.now();
     const planned = await toNewProject(
-      input,
+      checked,
       ids,
       this.#mirrorsRoot,
       now,
@@ -360,7 +483,10 @@ export class ProjectsService {
       orchestrator_agent_id: ids.orchestrator?.agent ?? null,
       reviewer_agent_id: ids.reviewer?.agent ?? null,
       submodule_repo_ids: depIds,
-      warnings: pushTargets === null ? [] : warningsOf(pushTargets),
+      warnings: [
+        ...probed.value.warnings,
+        ...(pushTargets === null ? [] : warningsOf(pushTargets)),
+      ],
     });
   }
 }

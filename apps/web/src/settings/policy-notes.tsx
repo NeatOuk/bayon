@@ -26,12 +26,11 @@ export function CertificationRuleNote({
       description="Read-only here: a security control, changed only from a shell."
     >
       <p className="text-sm">
-        With <span className="font-mono">admission.require_certified</span> on,
-        a spawn whose runner is not certified on its executor (§15) is refused.
-        Off, a runner nobody has certified runs unattended, so it is a security
-        control and not editable here, for the same reason as the trust rule. It
-        changes only from a shell, through frm&apos;s operator door, where every
-        change is checked and audited:{" "}
+        When on, a session whose runner has not passed certification on its
+        executor does not start. Off, a runner nobody has certified runs
+        unattended, so it is a security control and not editable here, for the
+        same reason as the trust rule. To change it, run this in a shell, where
+        every change is checked and audited:{" "}
         <span className="font-mono">
           frm settings set admission.require_certified 0|1 --yes
         </span>

@@ -53,7 +53,8 @@ describe("ErrorFilter", () => {
       body: {
         error: {
           class: "internal",
-          message: "request failed: internal",
+          message:
+            "Something went wrong on the server: try again, and if it keeps failing, check the API's log.",
           retryable: false,
         },
       },
@@ -68,7 +69,7 @@ describe("ErrorFilter", () => {
       body: {
         error: {
           class: "db_busy",
-          message: "request failed: db_busy",
+          message: "The database is busy: try again in a moment.",
           retryable: true,
         },
       },
@@ -97,7 +98,8 @@ describe("ErrorFilter", () => {
       body: {
         error: {
           class: "internal",
-          message: "request failed: internal",
+          message:
+            "Something went wrong on the server: try again, and if it keeps failing, check the API's log.",
           retryable: false,
         },
       },
@@ -152,7 +154,8 @@ describe("ErrorFilter", () => {
         body: {
           error: {
             class: "internal",
-            message: "request failed: internal",
+            message:
+              "Something went wrong on the server: try again, and if it keeps failing, check the API's log.",
             retryable: false,
           },
         },

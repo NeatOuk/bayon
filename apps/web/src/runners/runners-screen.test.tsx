@@ -13,6 +13,7 @@ import {
 import {
   certification,
   commandView,
+  modelView,
   runnerView,
   runnersView,
   summary,
@@ -183,7 +184,7 @@ test("no runner says so; a failed read says why", async () => {
   renderWithProviders(<RunnersScreen />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The runners are unavailable")).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
 });
 
 test("a failed read retries on asking, and shows the runners once they answer", async () => {
@@ -296,6 +297,190 @@ test("the model is picked from the runner's models: a bound one first; the pick 
   );
 });
 
+test("the model a project's agents run is the default, and the screen says who uses it", async () => {
+  // A new project: its agents run the standard tier, no role binds anything, and the cheap tier is
+  // listed first. The default is the model in use, never the cheapest.
+  const demo = runnerView({
+    id: "runner-a",
+    models: [
+      modelView({ id: "runner-a.cheap", tier: "cheap", model: "small" }),
+      modelView({
+        id: "runner-a.standard",
+        tier: "standard",
+        model: "mid",
+        bound_roles: ["demo · demo-builder-1 agent"],
+      }),
+    ],
+  });
+  const fetchMock = stubFetch({
+    [RUNNERS]: runnersView([demo]),
+    [EXECUTORS]: EXECUTOR_ROWS,
+    [CONFORMANCE]: { command_id: "cmd-1", created: true },
+    [COMMAND]: commandView({ id: "cmd-1", state: "claimed" }),
+  });
+  const user = userEvent.setup();
+  renderWithProviders(<RunnersScreen />);
+  const a = await screen.findByRole("region", { name: "runner-a" });
+  const model = within(a).getByRole("combobox", { name: "Model" });
+  await waitFor(() => expect(model.textContent).toContain("runner-a.standard"));
+  expect(
+    within(a).getByText(
+      "Certifies runner-a.standard, used by demo · demo-builder-1 agent.",
+    ),
+  ).toBeTruthy();
+  // One model in use: no certify-all.
+  expect(within(a).queryByRole("button", { name: /models in use/ })).toBeNull();
+  await user.click(model);
+  await user.click(
+    await screen.findByRole("option", { name: "runner-a.cheap" }),
+  );
+  expect(
+    within(a).getByText(
+      "Certifies runner-a.cheap, which no project, agent or role uses yet.",
+    ),
+  ).toBeTruthy();
+  await user.click(within(a).getByRole("button", { name: "Run conformance" }));
+  await waitFor(() =>
+    expect(bodyOf(fetchMock, CONFORMANCE, "POST")).toEqual({
+      executor_id: "local",
+      model_id: "runner-a.cheap",
+    }),
+  );
+});
+
+test("nothing in use: the default is the standard tier, not the cheapest", async () => {
+  stubFetch({
+    [RUNNERS]: runnersView([
+      runnerView({
+        id: "runner-a",
+        models: [
+          modelView({ id: "runner-a.cheap", tier: "cheap", model: "s" }),
+          modelView({ id: "runner-a.standard", tier: "standard", model: "m" }),
+        ],
+      }),
+    ]),
+    [EXECUTORS]: EXECUTOR_ROWS,
+  });
+  renderWithProviders(<RunnersScreen />);
+  const a = await screen.findByRole("region", { name: "runner-a" });
+  await waitFor(() =>
+    expect(
+      within(a).getByRole("combobox", { name: "Model" }).textContent,
+    ).toContain("runner-a.standard"),
+  );
+});
+
+test("several models in use: one button certifies them all, one run each, and follows each", async () => {
+  const two = runnerView({
+    id: "runner-a",
+    models: [
+      modelView({
+        id: "runner-a.cheap",
+        tier: "cheap",
+        model: "small",
+        bound_roles: ["builder"],
+      }),
+      modelView({
+        id: "runner-a.complex",
+        tier: "complex",
+        model: "large",
+        bound_roles: ["demo · review step"],
+      }),
+      modelView({ id: "runner-a.standard", tier: "standard", model: "mid" }),
+    ],
+  });
+  const fetchMock = stubFetch({
+    [RUNNERS]: runnersView([two]),
+    [EXECUTORS]: EXECUTOR_ROWS,
+    [CONFORMANCE]: { command_id: "cmd-1", created: true },
+    [COMMAND]: commandView({ id: "cmd-1", state: "claimed" }),
+  });
+  const user = userEvent.setup();
+  renderWithProviders(<RunnersScreen />);
+  const a = await screen.findByRole("region", { name: "runner-a" });
+  await user.click(
+    await within(a).findByRole("button", {
+      name: "Certify the 2 models in use",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      callsTo(fetchMock, CONFORMANCE, "POST").map(([, init]) =>
+        JSON.parse(init?.body as string),
+      ),
+    ).toEqual([
+      { executor_id: "local", model_id: "runner-a.cheap" },
+      { executor_id: "local", model_id: "runner-a.complex" },
+    ]),
+  );
+});
+
+test("certify-all with a POST refused midway: the run already queued is still followed, and the refusal is shown", async () => {
+  const two = runnerView({
+    id: "runner-a",
+    models: [
+      modelView({
+        id: "runner-a.cheap",
+        tier: "cheap",
+        model: "small",
+        bound_roles: ["builder"],
+      }),
+      modelView({
+        id: "runner-a.complex",
+        tier: "complex",
+        model: "large",
+        bound_roles: ["demo · review step"],
+      }),
+    ],
+  });
+  let posts = 0;
+  const fetchMock = stubFetch({
+    [RUNNERS]: runnersView([two]),
+    [EXECUTORS]: EXECUTOR_ROWS,
+    [CONFORMANCE]: () => {
+      posts += 1;
+      return posts === 1
+        ? { command_id: "cmd-1", created: true }
+        : apiError(400, "validation", "model runner-a.complex is retired");
+    },
+    [COMMAND]: commandView({ id: "cmd-1", state: "claimed" }),
+  });
+  const user = userEvent.setup();
+  renderWithProviders(<RunnersScreen />);
+  const a = await screen.findByRole("region", { name: "runner-a" });
+  await user.click(
+    await within(a).findByRole("button", {
+      name: "Certify the 2 models in use",
+    }),
+  );
+  expect((await within(a).findByRole("alert")).textContent).toContain(
+    "model runner-a.complex is retired",
+  );
+  expect(callsTo(fetchMock, CONFORMANCE, "POST")).toHaveLength(2);
+  await waitFor(() =>
+    expect(callsTo(fetchMock, COMMAND).length).toBeGreaterThan(0),
+  );
+  expect(await within(a).findByText(/command cmd-1/)).toBeTruthy();
+});
+
+test("the supervisor's job runners are not listed as runners to certify", async () => {
+  stubFetch({
+    [RUNNERS]: runnersView([
+      certified,
+      runnerView({ id: "job-x", kind: "job", certifications: [] }),
+    ]),
+    [EXECUTORS]: EXECUTOR_ROWS,
+  });
+  renderWithProviders(<RunnersScreen />);
+  await screen.findByRole("region", { name: "runner-a" });
+  expect(screen.queryByRole("region", { name: "job-x" })).toBeNull();
+  expect(
+    screen.getByText(
+      "Not listed: 1 internal job runner (job-x). It runs Bayon's own checks, not an agent, so it needs no certification.",
+    ),
+  ).toBeTruthy();
+});
+
 test("a runner with no active model offers nothing to run", async () => {
   const fetchMock = stubFetch({
     [RUNNERS]: runnersView([{ ...certified, models: [] }]),
@@ -386,7 +571,7 @@ test("a failed command and a refused executor each say so", async () => {
   refuse = true;
   await user.click(run);
   expect((await within(a).findByRole("alert")).textContent).toBe(
-    "not_found: executor local does not exist",
+    "executor local does not exist",
   );
   expect(callsTo(fetchMock, CONFORMANCE, "POST")).toHaveLength(2);
 });
@@ -416,7 +601,7 @@ test("with no executor to pick, nothing is posted; an executors read failure say
   renderWithProviders(<RunnersScreen />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The executors are unavailable")).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
 });
 
 test("a disabled executor is not offered to run the suite on", async () => {

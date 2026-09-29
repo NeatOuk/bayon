@@ -72,7 +72,21 @@ describe("contract 6 commands", () => {
       "executor.health",
       "session.attach",
       "session.detach",
+      "repo.check",
     ]);
+    // a repo check names the URL, and a base only when one was asked.
+    expect(
+      Command.parse({
+        type: "repo.check",
+        payload: { url: "https://github.com/a/b.git" },
+      }),
+    ).toEqual({
+      type: "repo.check",
+      payload: { url: "https://github.com/a/b.git" },
+    });
+    expect(
+      Command.safeParse({ type: "repo.check", payload: { url: "" } }).success,
+    ).toBe(false);
     // an executor's health check names the executor, nothing else.
     expect(
       Command.parse({

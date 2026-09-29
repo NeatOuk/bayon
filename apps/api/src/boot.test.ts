@@ -42,7 +42,7 @@ describe("bootApi", () => {
 
   test("refuses to start while migrations are pending", async () => {
     const cases = [
-      [0, "001_spine, 002_seed"],
+      [0, "001_spine"],
       [1, "002_seed"],
     ] as const;
     for (const [to, pending] of cases) {
@@ -56,9 +56,13 @@ describe("bootApi", () => {
           ok: false,
           error: { class: "validation" },
         });
+        // The headline says how far behind and where it starts; the cause lists every file.
         expect(booted.ok ? "" : booted.error.message).toContain(
-          `pending: ${pending}`,
+          `migrations to apply, from ${pending})`,
         );
+        expect(booted.ok ? [] : booted.error.cause).toMatchObject({
+          pending: expect.arrayContaining([pending]),
+        });
       });
     }
   });
@@ -97,7 +101,7 @@ describe("checkMigrations", () => {
     });
     expect(result).toMatchObject({ ok: false, error: { class: "validation" } });
     expect(result.ok ? "" : result.error.message).toContain(
-      "drifted: 001_spine",
+      "have since changed (001_spine",
     );
   });
 });

@@ -175,7 +175,7 @@ test("a failed health command and a refused one each say so", async () => {
   refuse = true;
   await user.click(check);
   expect(
-    await within(ctr).findByText("not_found: executor ctr-lab does not exist"),
+    await within(ctr).findByText("executor ctr-lab does not exist"),
   ).toBeTruthy();
 });
 
@@ -191,5 +191,5 @@ test("no executor says so; a failed read says why", async () => {
   renderWithProviders(<ExecutorsScreen />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The executors are unavailable")).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
 });

@@ -253,7 +253,9 @@ export async function pinSubject(i: PinInput): Promise<Result<Pin>> {
     );
     // A failed fetch stays `internal` on the gate path, as it was before an earlier change.
     if (!fetched.ok) {
-      return fetched.error.class === "spawn_failed"
+      // Its plain words are kept; the class is the gate path's own.
+      return fetched.error.class === "spawn_failed" ||
+        fetched.error.class === "repo_unreachable"
         ? err({ ...fetched.error, class: "internal" as const })
         : fetched;
     }

@@ -19,6 +19,7 @@ import type { HistoryService } from "./history/history-service.js";
 import type { DocsReader } from "./docs/reader.js";
 import type { JiraService } from "./jira/service.js";
 import type { NotificationsService } from "./notify/service.js";
+import type { FoldersService } from "./projects/folders/folders-service.js";
 import type { ProjectsService } from "./projects/projects-service.js";
 import type { TicketService } from "./tickets/ticket-service.js";
 import type { RelayClient } from "./relay/relay-client.js";
@@ -53,6 +54,8 @@ export interface ApiDeps {
   readonly diffs?: SessionDiffService;
   /** POST /projects; boot always passes it. */
   readonly projects?: ProjectsService;
+  /** /folders; boot always passes it. */
+  readonly folders?: FoldersService;
   /** POST /executors; boot always passes it. */
   readonly executorsCreate?: ExecutorsCreateService;
   /** A project's timeline and export, an agent's sessions; boot always passes it. */
@@ -93,6 +96,7 @@ export async function startApi(deps: ApiDeps): Promise<RunningApi> {
       ...(deps.gates === undefined ? {} : { gates: deps.gates }),
       ...(deps.diffs === undefined ? {} : { diffs: deps.diffs }),
       ...(deps.projects === undefined ? {} : { projects: deps.projects }),
+      ...(deps.folders === undefined ? {} : { folders: deps.folders }),
       ...(deps.history === undefined ? {} : { history: deps.history }),
       ...(deps.jira === undefined ? {} : { jira: deps.jira }),
       ...(deps.notifications === undefined

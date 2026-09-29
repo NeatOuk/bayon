@@ -213,7 +213,8 @@ export type ModelContext = {
   readonly reservedPorts?: readonly number[];
 };
 
-export type RunnerKind = "llm_sdk" | "llm_cli" | "llm_http" | "script";
+/** `job`: one of the supervisor's own jobs, never an agent (core JOB_RUNNER_KIND). */
+export type RunnerKind = "llm_sdk" | "llm_cli" | "llm_http" | "script" | "job";
 
 /** The rows an adapter registers at supervisor boot (amendment 4), so runner names stay here. */
 export type Registration = {

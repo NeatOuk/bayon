@@ -28,12 +28,17 @@ import {
   type WorkspaceRepo,
 } from "@bayon/db";
 import { z } from "zod";
-import { originGitAuth, type GitAuth } from "../forge/credential.js";
+import {
+  NO_GIT_AUTH,
+  originGitAuth,
+  type GitAuth,
+} from "../forge/credential.js";
 import type { Ctx } from "./context.js";
 import { frmError } from "./errors.js";
 import type { Exited } from "./exec.js";
 import { failedGit } from "./host-git.js";
 import { ensureMirror, mirrorKey } from "./mirror.js";
+import { repoReadFailure } from "./repo-failure.js";
 import type { Resolved } from "./resolve.js";
 
 /**
@@ -171,19 +176,35 @@ export async function fetchBase(
   git: MirrorGit,
   repo: Pick<
     WorkspaceRepo,
-    "origin_url" | "mirror_path" | "default_base_branch"
+    "id" | "origin_url" | "mirror_path" | "default_base_branch"
   >,
   signal: AbortSignal,
+  /** What `git` was handed to authenticate: masked out of a message, named in it. */
+  auth: GitAuth = NO_GIT_AUTH,
 ): Promise<Result<void>> {
   if (repo.origin_url === null) return ok(undefined);
   const base = repo.default_base_branch;
-  const fetched = await gitOk(
-    git,
-    repo.mirror_path,
-    ["fetch", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`],
-    signal,
+  const args = [
+    "fetch",
+    "origin",
+    `+refs/heads/${base}:refs/remotes/origin/${base}`,
+  ];
+  const ran = await git(repo.mirror_path, args, signal);
+  if (!ran.ok) return ran;
+  if (ran.value.code === 0) return ok(undefined);
+  // In plain words when git's say why: access removed after the mirror was cloned, or
+  // a base branch the remote does not have, is what the ticket shows — not only git's stderr.
+  return err(
+    repoReadFailure({
+      repoId: repo.id,
+      url: repo.origin_url,
+      auth,
+      stderr: ran.value.stderr,
+      code: ran.value.code,
+      what: "git fetch",
+      branch: base,
+    }),
   );
-  return fetched.ok ? ok(undefined) : fetched;
 }
 
 /** The base branch's ref in the mirror. */
@@ -201,7 +222,7 @@ export async function ensureCommit(
   git: MirrorGit,
   repo: Pick<
     WorkspaceRepo,
-    "origin_url" | "mirror_path" | "default_base_branch"
+    "id" | "origin_url" | "mirror_path" | "default_base_branch"
   >,
   sha: string,
   signal: AbortSignal,
@@ -356,7 +377,12 @@ async function resolveRepo(
       baseRef,
     };
   } else {
-    const fetched = await fetchBase(withGitAuth(hooks.git, auth), repo, signal);
+    const fetched = await fetchBase(
+      withGitAuth(hooks.git, auth),
+      repo,
+      signal,
+      auth,
+    );
     if (!fetched.ok) return fetched;
     const sha = await gitOk(
       hooks.git,
@@ -447,7 +473,7 @@ async function planChild(
   const made = await ensureMirror(ctx, repo, signal, auth);
   if (!made.ok) return made;
   const origin = withGitAuth(hooks.git, auth);
-  const fetched = await fetchBase(origin, repo, signal);
+  const fetched = await fetchBase(origin, repo, signal, auth);
   if (!fetched.ok) return fetched;
   const present = await ensureCommit(origin, repo, entry.sha, signal, {
     fetchBaseFirst: false,

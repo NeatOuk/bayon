@@ -605,7 +605,19 @@ test("one ticket's next-step facts: its holder by name, its live reviewers, its 
   expect(unwrap(await getNextStepFacts(db, "ticket-1"))).toEqual({
     openQuestions: 1,
     proposalOpen: false,
-    holder: { agent: SPINE_SEED.agentName, state: "running", turns: 14 },
+    holder: {
+      session_id: "builder",
+      agent: SPINE_SEED.agentName,
+      state: "running",
+      turns: 14,
+      // The spine's runner is a script (runners.kind), so idle would be its end.
+      scripted: true,
+    },
+    starting: null,
+    // g1's reviewer: live on the ticket, so staffing would refuse.
+    reviewing: { agent: SPINE_SEED.agentName, session_id: "rev" },
+    // ws-a has no builder of its own: the fleet's (the spine's) is its pool, as staffing reads it.
+    hasBuilder: true,
     liveGateIds: ["g1"],
     handoffPending: false,
     parkNote: null,
@@ -620,6 +632,154 @@ test("one ticket's next-step facts: its holder by name, its live reviewers, its 
   });
   const missing = await getNextStepFacts(db, "nope");
   expect(missing.ok ? null : missing.error.class).toBe("not_found");
+});
+
+// between "Staff" and the session row, the ticket is being started, not unheld.
+test("a queued spawn is the ticket's start until its session row exists, then the holder is", async () => {
+  const db = await world();
+  const spawn = (
+    id: string,
+    o: { state?: "pending" | "done"; ts?: number } = {},
+  ) => ({
+    id,
+    ts: o.ts ?? 1,
+    type: "session.spawn",
+    state: o.state ?? "pending",
+    payload_json: JSON.stringify({
+      session_id: `s-${id}`,
+      agent_id: SPINE_SEED.agentId,
+      role: "builder",
+      run_class: "spike",
+      ticket_id: "ticket-1",
+    }),
+  });
+  unwrap(
+    await seedRows(db, {
+      tickets: [ticket(1, { status: "staffed" }), ticket(2)],
+      commands: [
+        spawn("done", { state: "done", ts: 0 }),
+        spawn("queued", { ts: 2 }),
+      ],
+    }),
+  );
+  expect(unwrap(await getNextStepFacts(db, "ticket-1"))).toMatchObject({
+    holder: null,
+    starting: { agent: SPINE_SEED.agentName },
+  });
+  expect(
+    unwrap(await listWaitFacts(db, ["ticket-1", "ticket-2"])),
+  ).toMatchObject(
+    new Map([
+      ["ticket-1", expect.objectContaining({ spawn_queued: true })],
+      ["ticket-2", expect.objectContaining({ spawn_queued: false })],
+    ]),
+  );
+  unwrap(
+    await seedRows(db, {
+      sessions: [
+        session("s-queued", {
+          ticket_id: "ticket-1",
+          state: "idle",
+          turns: 1,
+        }),
+      ],
+    }),
+  );
+  expect(unwrap(await getNextStepFacts(db, "ticket-1"))).toMatchObject({
+    holder: { session_id: "s-queued", state: "idle", turns: 1 },
+    starting: null,
+  });
+  const facts = unwrap(await listWaitFacts(db, ["ticket-1"]));
+  expect(facts.get("ticket-1")).toMatchObject({
+    holder_state: "idle",
+    spawn_queued: false,
+  });
+});
+
+test("a builder is the project's own enabled one, else the fleet's while the project has none", async () => {
+  const db = await world();
+  unwrap(
+    await seedRows(db, {
+      agents: [
+        {
+          id: "b-a",
+          name: "b-a",
+          kind: "builder",
+          runner_id: SPINE_SEED.runnerId,
+          executor_id: SPINE_SEED.executorId,
+          workspace_id: "ws-b",
+          enabled: 0,
+          created_at: 0,
+        },
+      ],
+      tickets: [ticket(1), ticket(2, { workspace_id: "ws-b" })],
+    }),
+  );
+  // ws-a borrows the fleet's builder; ws-b has its own, disabled, so it waits rather than borrows.
+  expect(unwrap(await getNextStepFacts(db, "ticket-1")).hasBuilder).toBe(true);
+  expect(unwrap(await getNextStepFacts(db, "ticket-2")).hasBuilder).toBe(false);
+});
+
+// Review M4: the fleet's builders are narrowed by the builder binding, as staffing's pick is.
+test("a fleet builder counts only on the builder binding's runner or its fallback", async () => {
+  const db = await world();
+  unwrap(
+    await seedRows(db, {
+      runners: [
+        { id: "runner-b", kind: "sdk", adapter: "fixture", caps_json: "{}" },
+      ],
+      role_bindings: [
+        { role: "builder", runner_id: "runner-b", updated_at: 1 },
+      ],
+      workspaces: [{ id: "ws-own", name: "own", kind: "single" }],
+      agents: [
+        {
+          id: "own-builder",
+          name: "own-builder",
+          kind: "builder",
+          runner_id: SPINE_SEED.runnerId,
+          executor_id: SPINE_SEED.executorId,
+          workspace_id: "ws-own",
+          created_at: 0,
+        },
+      ],
+      tickets: [ticket(1), ticket(2, { workspace_id: "ws-own" })],
+    }),
+  );
+  // ws-a borrows the fleet's, and the fleet's only builder runs on no runner the binding names.
+  expect(unwrap(await getNextStepFacts(db, "ticket-1")).hasBuilder).toBe(false);
+  // A project's own builders are its choice: the binding does not narrow them.
+  expect(unwrap(await getNextStepFacts(db, "ticket-2")).hasBuilder).toBe(true);
+});
+
+// Review M1: a gate reviewer is never the holder, but staffing counts it, so it is read apart.
+test("a live reviewer on the ticket is its reviewing fact, never its holder", async () => {
+  const db = await world();
+  unwrap(
+    await seedRows(db, {
+      tickets: [ticket(1, { status: "review_fix" })],
+      gates: [gate("g1", "ticket-1", { state: "failed" })],
+    }),
+  );
+  unwrap(
+    await seedRows(db, {
+      sessions: [
+        session("rev", { ticket_id: "ticket-1", gate_id: "g1", state: "idle" }),
+        session("rev-old", {
+          ticket_id: "ticket-1",
+          gate_id: "g1",
+          state: "exited",
+        }),
+      ],
+    }),
+  );
+  expect(unwrap(await getNextStepFacts(db, "ticket-1"))).toMatchObject({
+    holder: null,
+    reviewing: { agent: SPINE_SEED.agentName, session_id: "rev" },
+  });
+  expect(
+    unwrap(await listWaitFacts(db, ["ticket-1"])).get("ticket-1"),
+  ).toMatchObject({ holder_state: null, reviewer_live: true });
 });
 
 test("a broken fleet.paused row is a config error, as it is to admission", async () => {

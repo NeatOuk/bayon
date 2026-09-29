@@ -1,3 +1,4 @@
+import { isAgentRunner } from "@bayon/core";
 import type { ExecutorView, RunnerView } from "@bayon/proto";
 import { useQuery } from "@tanstack/react-query";
 import { Loading } from "@/components/loading";
@@ -64,7 +65,10 @@ function RunnerList({
   /** Ask again: a supervisor that just booted has registered them since. */
   readonly onRefresh: () => void;
 }) {
-  if (runners.length === 0)
+  // The supervisor's own job runners are not agents: nothing here applies to them.
+  const agents = runners.filter(isAgentRunner);
+  const jobs = runners.filter((r) => !isAgentRunner(r));
+  if (agents.length === 0)
     return (
       <Empty>
         <EmptyHeader>
@@ -81,10 +85,23 @@ function RunnerList({
       </Empty>
     );
   return (
-    <div className="grid gap-4 2xl:grid-cols-2">
-      {runners.map((runner) => (
-        <RunnerCard key={runner.id} runner={runner} executors={executors} />
-      ))}
-    </div>
+    <>
+      <div className="grid gap-4 2xl:grid-cols-2">
+        {agents.map((runner) => (
+          <RunnerCard key={runner.id} runner={runner} executors={executors} />
+        ))}
+      </div>
+      {jobs.length > 0 && <JobRunnersNote ids={jobs.map((r) => r.id)} />}
+    </>
+  );
+}
+
+/** One quiet line for the job runners the list leaves out, so none looks lost. */
+function JobRunnersNote({ ids }: { readonly ids: readonly string[] }) {
+  const one = ids.length === 1;
+  return (
+    <p className="text-sm text-muted-foreground">
+      {`Not listed: ${ids.length} internal job runner${one ? "" : "s"} (${ids.join(", ")}). ${one ? "It runs" : "They run"} Bayon's own checks, not an agent, so ${one ? "it needs" : "they need"} no certification.`}
+    </p>
   );
 }

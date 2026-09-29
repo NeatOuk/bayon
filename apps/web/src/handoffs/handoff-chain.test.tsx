@@ -53,25 +53,27 @@ test("each hand-off shows its reason, sessions, quality and acceptance, in order
   );
   const chain = screen.getByRole("region", { name: "hand-offs" });
   const [first, second, third] = within(chain).getAllByRole("listitem");
-  expect(first?.textContent).toMatch(/^#1 Phase changes1→s2Full/);
+  expect(first?.textContent).toMatch(/^#1 Next phases1→s2Complete/);
   expect(first?.textContent).toContain("Guard the transfer");
-  expect(first?.textContent).not.toContain("not accepted");
+  expect(first?.textContent).not.toContain("waiting to be picked up");
   expect(
     within(first ?? chain)
       .getByRole("link", { name: "s2" })
       .getAttribute("href"),
   ).toBe("#/sessions/s2");
   expect(second?.textContent).toMatch(
-    /^#2 Context ceilings2→no successorDegradednot accepted/,
+    /^#2 Context fulls2→no one yetPartialwaiting to be picked up/,
   );
   expect(third?.textContent).toMatch(
-    /^#3 Operators3→no successorWritingbeing written/,
+    /^#3 Handed off by yous3→no one yetWritingbeing written/,
   );
   // Quality reads by the status map: a degraded packet wants a look, a full one is the good end.
-  expect(within(second ?? chain).getByText("Degraded").dataset.tone).toBe(
+  expect(within(second ?? chain).getByText("Partial").dataset.tone).toBe(
     "warning",
   );
-  expect(within(first ?? chain).getByText("Full").dataset.tone).toBe("success");
+  expect(within(first ?? chain).getByText("Complete").dataset.tone).toBe(
+    "success",
+  );
 });
 
 test("no hand-offs says so", () => {
@@ -83,7 +85,7 @@ test("opening a packet reads GET /handoffs/:id and shows its judgement", async (
   stubFetch({ "/api/v1/handoffs/h1": packet("h1") });
   const user = userEvent.setup();
   renderWithProviders(<HandoffChain handoffs={[handoffView({ id: "h1" })]} />);
-  await user.click(screen.getByRole("button", { name: "packet" }));
+  await user.click(screen.getByRole("button", { name: "note" }));
   const shown = await screen.findByLabelText("packet h1");
   for (const text of [
     "/frm/worktrees/w1/.foreman/handoff-1.md · ~900 tokens · build → build",
@@ -99,8 +101,10 @@ test("a packet that cannot be read says why", async () => {
   stubFetch({});
   const user = userEvent.setup();
   renderWithProviders(<HandoffChain handoffs={[handoffView({ id: "h1" })]} />);
-  await user.click(screen.getByRole("button", { name: "packet" }));
+  await user.click(screen.getByRole("button", { name: "note" }));
   const alert = await screen.findByRole("alert");
-  expect(within(alert).getByText("The packet is unavailable")).toBeTruthy();
-  expect(alert.textContent).toMatch(/not_found/);
+  expect(
+    within(alert).getByText("The hand-off note is unavailable"),
+  ).toBeTruthy();
+  expect(alert.textContent).toContain("/api/v1/");
 });

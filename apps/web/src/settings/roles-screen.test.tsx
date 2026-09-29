@@ -288,7 +288,7 @@ test("a refused binding stays in the dialog with the server's reason; no runner 
     within(dialog).getByRole("button", { name: "Save binding" }),
   );
   expect(
-    await within(dialog).findByText("not_found: profile nope does not exist"),
+    await within(dialog).findByText("profile nope does not exist"),
   ).toBeTruthy();
   expect(screen.getByRole("dialog")).toBeTruthy();
 });
@@ -304,8 +304,8 @@ test("a failed read of the bindings or of the executors says so", async () => {
     await screen.findByText("The role bindings are unavailable"),
   ).toBeTruthy();
   expect(await screen.findByText("The executors are unavailable")).toBeTruthy();
-  expect(screen.getByText("internal: db down")).toBeTruthy();
-  expect(screen.getByText("internal: no executors")).toBeTruthy();
+  expect(screen.getByText("db down")).toBeTruthy();
+  expect(screen.getByText("no executors")).toBeTruthy();
 });
 
 test("the request trims the typed profile to null when blank and refuses a missing runner", () => {
@@ -323,4 +323,32 @@ test("the request trims the typed profile to null when blank and refuses a missi
   expect(
     bindingRequest("builder", { ...form, profile_id: "x".repeat(65) }),
   ).toBeNull();
+});
+
+test("the binding dialog's runner pickers never list a job runner", async () => {
+  stubFetch({
+    [BINDINGS]: { items: [] },
+    [RUNNERS]: runnersView([
+      runnerView({ id: "runner-a" }),
+      runnerView({ id: "script-lint-check", kind: "job" }),
+    ]),
+    [EXECUTORS]: EXECUTOR_ROWS,
+  });
+  const user = userEvent.setup();
+  renderWithProviders(<RolesScreen />);
+  await screen.findByRole("table", { name: "role bindings" });
+  await user.click(
+    within(row("builder")).getByRole("button", { name: "Bind builder" }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  for (const name of ["Runner", "Fallback runner"]) {
+    await user.click(within(dialog).getByRole("combobox", { name }));
+    expect(
+      await screen.findByRole("option", { name: "runner-a" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("option", { name: "script-lint-check" }),
+    ).toBeNull();
+    await user.keyboard("{Escape}");
+  }
 });

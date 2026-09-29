@@ -1,7 +1,7 @@
 // setSettingFromCli, `frm settings set`'s writer, against a real temp database: the
 // same check PUT /settings makes, the same settings.put audit row with via 'frm', and nothing
 // written when the key is not governed, the value out of bounds, or already what it is.
-import { FakeClock } from "@bayon/core";
+import { FakeClock, err, ok } from "@bayon/core";
 import { afterEach, expect, test } from "vitest";
 import { internalsOf } from "../connection.js";
 import { getSettings } from "../index.js";
@@ -12,7 +12,7 @@ import {
   unwrap,
   type TempDb,
 } from "../testing.js";
-import { setSettingFromCli } from "./setting-set.js";
+import { setSettingFromCli, updateSettingFromCli } from "./setting-set.js";
 
 const T0 = 1_700_000_000_000;
 const opened: TempDb[] = [];
@@ -171,4 +171,58 @@ test("a refused key is not written even when it would have been a new row", asyn
   const t = await db();
   await setSettingFromCli(t.db, "not.governed", 1);
   expect(await valueOf(t, "not.governed")).toBeUndefined();
+});
+
+test("updateSettingFromCli: reads, changes and writes in one transaction, audited like set", async () => {
+  const t = await db();
+  const key = "projects.local_roots";
+  const seen: unknown[] = [];
+  const add = (root: string) =>
+    updateSettingFromCli(t.db, key, (from) => {
+      seen.push(from);
+      return ok([...(Array.isArray(from) ? from : []), root]);
+    });
+  expect(unwrap(await add("/a"))).toMatchObject({
+    from: [],
+    to: ["/a"],
+    changed: true,
+  });
+  expect(unwrap(await add("/b"))).toMatchObject({
+    from: ["/a"],
+    to: ["/a", "/b"],
+    changed: true,
+  });
+  expect(seen).toEqual([[], ["/a"]]);
+  expect(await valueOf(t, key)).toEqual(["/a", "/b"]);
+  const audit = unwrap(await listAudit(t.db)).filter(
+    (r) => r.target_id === key,
+  );
+  expect(audit).toHaveLength(2);
+  expect(
+    audit.every((r) => r.action === "settings.put" && r.actor === "operator"),
+  ).toBe(true);
+});
+
+test("updateSettingFromCli: the same value writes nothing; a refusal or a bad value writes nothing", async () => {
+  const t = await db();
+  const key = "projects.local_roots";
+  expect(
+    unwrap(await updateSettingFromCli(t.db, key, (from) => ok(from ?? []))),
+  ).toMatchObject({ changed: false });
+  const refused = await updateSettingFromCli(t.db, key, () =>
+    err({ class: "validation", message: "no", retryable: false }),
+  );
+  expect(refused.ok).toBe(false);
+  const bad = await updateSettingFromCli(t.db, key, () =>
+    ok(["relative/path"]),
+  );
+  expect(bad.ok).toBe(false);
+  const ungoverned = await updateSettingFromCli(t.db, "fleet.paused", () =>
+    ok(1),
+  );
+  expect(ungoverned.ok).toBe(false);
+  expect(await valueOf(t, key)).toEqual([]);
+  expect(
+    unwrap(await listAudit(t.db)).filter((r) => r.target_id === key),
+  ).toEqual([]);
 });

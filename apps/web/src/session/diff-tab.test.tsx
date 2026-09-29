@@ -158,9 +158,7 @@ test("nothing to show says why; a failed read says so; Refresh reads it again", 
   await user.click(screen.getByRole("button", { name: "Refresh" }));
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The diff is unavailable")).toBeTruthy();
-  expect(
-    within(alert).getByText("not_found: session S1 does not exist"),
-  ).toBeTruthy();
+  expect(within(alert).getByText("session S1 does not exist")).toBeTruthy();
   await waitFor(() => expect(callsTo(fetchMock, DIFF)).toHaveLength(2));
   // The alert's own Retry reads it again too.
   await user.click(within(alert).getByRole("button", { name: "Retry" }));

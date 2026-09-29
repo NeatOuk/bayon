@@ -4,22 +4,28 @@ import { realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { SUPERVISOR_LOCK_FILE } from "@bayon/core";
 import { BACKUPS_DIR } from "@bayon/db";
+import { socketDir } from "@bayon/executors";
+
+// Every unix socket lives in socketDir(home): FRM_HOME itself when its sockets fit in
+// the 104-byte sun_path limit (the default install's does), else a short private directory under
+// /tmp derived from the home alone, so the API finds the relay socket there too.
 
 /** The control socket: one supervisor per FRM_HOME. */
-export const socketPath = (home: string): string => join(home, "s.sock");
+export const socketPath = (home: string): string =>
+  join(socketDir(home), "s.sock");
 
 /**
  * An attach lease's tmux socket (§12.5; the design's reserved convention: tmux `-S`
- * goes under `$FRM_HOME/s/<short>`). The last 12 characters of a ULID, not the whole id, keep the
- * path well inside the 104-byte sun_path limit (socket.ts) regardless of FRM_HOME's own length.
+ * goes under `<socket dir>/s/<short>`). The last 12 characters of a ULID, not the whole id, keep
+ * the path inside the 104-byte sun_path limit (socket.ts); socketDir keeps the rest short.
  */
 export const tmuxSocketPath = (home: string, sessionId: string): string =>
-  join(home, "s", sessionId.slice(-12));
+  join(socketDir(home), "s", sessionId.slice(-12));
 
 /** The byte-relay socket (§12.5): a separate channel from the control socket, for
  * multiplexed binary streams (e.g. a session's pty) between the supervisor and the API. */
 export const relaySocketPath = (home: string): string =>
-  join(home, "relay.sock");
+  join(socketDir(home), "relay.sock");
 
 /** The supervisor lock (lock.ts): taken before the socket, released last. */
 export const lockPath = (home: string): string =>

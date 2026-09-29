@@ -265,7 +265,7 @@ export async function builderStep(
   );
   await (handsOff
     ? w.h.step(
-        `${label}: released itself at the phase boundary, full packet (§7.1)`,
+        `${label}: released itself at the phase boundary, full hand-off packet`,
         () => phaseHandoffProblems(w, id, ticketId),
       )
     : w.h.step(`${label}: stopped`, async () => {

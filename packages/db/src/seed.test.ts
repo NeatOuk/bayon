@@ -87,6 +87,8 @@ test("settings hold the eight §4 keys, the daily budget cap, 004's eight M2 key
     { key: "preflight.margin_pct", value_json: "15" },
     // 027: no folder a project's repo may be a path inside.
     { key: "projects.local_roots", value_json: "[]" },
+    // 053: no loopback or private host a repo may be read from.
+    { key: "projects.private_repo_hosts", value_json: "[]" },
     { key: "pulse.lease_ttl_ms", value_json: "1020000" },
     // 043: ten minutes for a CI to report its first check.
     { key: "qa.ci_grace_ms", value_json: "600000" },

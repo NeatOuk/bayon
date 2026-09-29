@@ -18,9 +18,10 @@ import {
   SessionSpawnPayload,
   SessionStopPayload,
 } from "./payloads.js";
-import type { ExecutorHealthPayload } from "@bayon/proto";
+import type { ExecutorHealthPayload, RepoCheckPayload } from "@bayon/proto";
 import type { CommandHandler } from "./ports.js";
 import { compileRun } from "./prompt.js";
+import { repoCheckHandler } from "./repo-read.js";
 import { STALE_SESSION, stillStale } from "./stale-holder.js";
 import { admitBeforeRow } from "./admission.js";
 import { createSessionRow, resolveSpawn } from "./resolve.js";
@@ -66,11 +67,18 @@ export interface LifecycleHandlers {
   /** §12.5: takes or releases a session's attach (terminal takeover) lease. */
   readonly attach: CommandHandler<SessionAttachPayload>;
   readonly detach: CommandHandler<SessionDetachPayload>;
+  /** `repo.check`: whether a repo URL can be read as the mirror clone would read it. */
+  readonly repoCheck: CommandHandler<RepoCheckPayload>;
 }
 
-export function commandHandlers(ctx: Ctx): LifecycleHandlers {
+export function commandHandlers(
+  ctx: Ctx,
+  /** Aborted at shutdown: a repo check's git dies with it (review L3). */
+  stopping?: AbortSignal,
+): LifecycleHandlers {
   return {
     health: executorHealthHandler(ctx),
+    repoCheck: repoCheckHandler(ctx, stopping),
     spawn: {
       type: "session.spawn",
       payload: SessionSpawnPayload,

@@ -171,6 +171,73 @@ describe("get", () => {
     });
   });
 
+  // the page's banner, holder and economics are one read, and agree at every moment.
+  test("a staffed ticket: its queued spawn, then its idle session, in one read", async () => {
+    // Its own num, far past what create() and seed() hand out, so later tests keep theirs.
+    const num = "90001";
+    const ticketId = `ticket-${num}`;
+    unwrap(
+      await seedRows(t.db, {
+        tickets: [ticketRow(90_001, { status: "staffed" })],
+      }),
+    );
+    unwrap(
+      await seedRows(t.db, {
+        commands: [
+          {
+            id: `cmd-${num}`,
+            ts: 1,
+            type: "session.spawn",
+            payload_json: JSON.stringify({
+              session_id: `s-${num}`,
+              agent_id: "agent-fixture",
+              role: "builder",
+              run_class: "spike",
+              ticket_id: ticketId,
+            }),
+          },
+        ],
+      }),
+    );
+    const queued = value(await service.get(num, OPERATOR));
+    expect(queued.holder).toEqual({ kind: "queued", agent: "fixture" });
+    expect(queued.next_step).toEqual({
+      waiting_on: "agent",
+      reason: "Starting a session for fixture…",
+    });
+    expect(queued.economics.sessions).toBe(0);
+
+    unwrap(
+      await seedRows(t.db, {
+        sessions: [
+          {
+            ...newSessionInput(),
+            id: `s-${num}`,
+            ticket_id: ticketId,
+            state: "idle",
+            turns: 1,
+            created_at: 0,
+          },
+        ],
+      }),
+    );
+    const idle = value(await service.get(num, OPERATOR));
+    expect(idle.holder).toEqual({
+      kind: "session",
+      agent: "fixture",
+      session_id: `s-${num}`,
+      state: "idle",
+    });
+    // The spine's runner is a script: idle after its turn is where it stops, and the page says so.
+    expect(idle.next_step).toEqual({
+      waiting_on: "agent",
+      reason:
+        "fixture is idle after turn 1: its runner is a test script that does no real work, so this is where it stops",
+    });
+    expect(idle.economics.sessions).toBe(1);
+    expect(value(await service.next(num))).toEqual(idle.next_step);
+  });
+
   test("a worker sees why it may not prioritize", async () => {
     const ticket = await create("not yours to rank");
     const detail = value(await service.get(ticket.id, worker("s-x")));

@@ -130,5 +130,5 @@ test("a full-text fetch that fails says why", async () => {
   await userEvent
     .setup()
     .click(screen.getByRole("button", { name: /full text/i }));
-  expect((await screen.findByRole("alert")).textContent).toContain("not_found");
+  expect((await screen.findByRole("alert")).textContent).toContain("/api/v1/");
 });

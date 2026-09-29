@@ -3,7 +3,12 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { systemClock } from "@bayon/core";
 import type { Db } from "@bayon/db";
-import { hostSecrets, LocalExecutor, SlotCounter } from "@bayon/executors";
+import {
+  hostSecrets,
+  LocalExecutor,
+  mcpUrl as installMcpUrl,
+  SlotCounter,
+} from "@bayon/executors";
 import { loadAdapter, RUNNER_IDS, type RunnerAdapter } from "@bayon/runners";
 import { pino, type Logger } from "pino";
 import { z } from "zod";
@@ -17,7 +22,6 @@ import {
   type ConformanceCommand,
 } from "./conformance/command.js";
 import { localDiskPaths } from "./lifecycle/disk-paths.js";
-import { DEFAULT_MCP_URL } from "./lifecycle/mcp.js";
 import type { SecretStore } from "./lifecycle/secrets.js";
 import { wireGates, type GateWiring } from "./gates/wiring.js";
 import { wireBackups, type BackupWiring } from "./jobs/backup-wiring.js";
@@ -40,7 +44,13 @@ import { registerLintRunner } from "./jobs/lint-wiring.js";
 import { registerQaRunner } from "./jobs/qa-wiring.js";
 import { registerParityRunner } from "./jobs/parity-wiring.js";
 import { lifecycleFactory, type ExecutorSlots } from "./lifecycle/index.js";
-import { homeTag } from "./paths.js";
+import {
+  humanDestination,
+  LogFormat,
+  LogLevel,
+  logSetup,
+} from "./log-output.js";
+import { homeTag, socketPath } from "./paths.js";
 import { createPlacement, egressHostsOf, type Placement } from "./placement.js";
 import { probeRunCommand, type ProbeCommand } from "./pulse/probe-command.js";
 import { createProbeRunner } from "./pulse/probes.js";
@@ -69,7 +79,7 @@ function loadAdapters(log: Logger): ReadonlyMap<string, RunnerAdapter> {
 /** The lifecycle and its host side: the executors its rows name, the adapters, the secret store. */
 function processLifecycle(
   adapters: ReadonlyMap<string, RunnerAdapter>,
-  mcpUrl: string | undefined,
+  mcpUrl: string,
   local: ExecutorSlots,
   placement: Placement,
   tag: string,
@@ -80,7 +90,7 @@ function processLifecycle(
     executors: new Map([[LOCAL_EXECUTOR_ID, local]]),
     loadExecutors: (db) => placement.load(db),
     adapters,
-    ...(mcpUrl === undefined ? {} : { mcpUrl }),
+    mcpUrl,
     secrets,
     homeTag: tag,
     jobRunners: JOB_RUNNERS,
@@ -91,26 +101,45 @@ function processLifecycle(
 const Env = z.object({
   FRM_HOME: z.string().min(1),
   FRM_DB: z.string().min(1).optional(),
-  /** The API's /mcp that session runners call. */
+  /** The API's /mcp that session runners call; absent, this home's API's. */
   FRM_MCP_URL: z.url().optional(),
-  FRM_LOG_LEVEL: z
-    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
-    .default("info"),
+  /** Absent: `info` to a file, `warn` at a terminal (log-output.ts). */
+  FRM_LOG_LEVEL: LogLevel.optional(),
+  /** Absent: human lines at a terminal, JSON otherwise. */
+  FRM_LOG_FORMAT: LogFormat.optional(),
 });
 const PackageJson = z.object({ version: z.string().min(1) });
 
 async function main(): Promise<void> {
   const env = Env.safeParse(process.env);
-  const log = pino({
-    name: "supervisor",
-    level: env.success ? env.data.FRM_LOG_LEVEL : "info",
-  });
+  const output = logSetup(
+    env.success ? env.data : {},
+    process.stdout.isTTY === true,
+  );
+  const log =
+    output.format === "human"
+      ? pino(
+          { name: "supervisor", level: output.level },
+          humanDestination((text) => process.stdout.write(text)),
+        )
+      : pino({ name: "supervisor", level: output.level });
+  /** A start that fails: the log record, and in JSON mode one plain line on stderr too. */
+  const cannotStart = (
+    what: string,
+    error: { readonly message: string },
+    code: number,
+  ): void => {
+    log.fatal({ error }, what);
+    if (output.format === "json")
+      process.stderr.write(`supervisor: ${what}: ${error.message}\n`);
+    process.exitCode = code;
+  };
   if (!env.success) {
-    log.fatal(
-      { issues: z.prettifyError(env.error) },
+    cannotStart(
       "set FRM_HOME to start the supervisor",
+      { message: z.prettifyError(env.error) },
+      2,
     );
-    process.exitCode = 2;
     return;
   }
   // CI and the smokes set FRM_SECRET_<NAME>; an operator keeps secrets in the Keychain, or, with
@@ -118,8 +147,7 @@ async function main(): Promise<void> {
   // The Keychain service is this FRM_HOME's own: `foreman` for the default home only.
   const secrets = hostSecrets(process.env);
   if (!secrets.ok) {
-    log.fatal({ error: secrets.error }, "the host secret store is refused");
-    process.exitCode = 2;
+    cannotStart("the host secret store is refused", secrets.error, 2);
     return;
   }
   const pkg = PackageJson.safeParse(
@@ -132,15 +160,13 @@ async function main(): Promise<void> {
   try {
     mkdirSync(env.data.FRM_HOME, { recursive: true, mode: 0o700 });
   } catch (e) {
-    log.fatal({ err: String(e) }, "cannot create FRM_HOME");
-    process.exitCode = 1;
+    cannotStart("cannot create FRM_HOME", { message: String(e) }, 1);
     return;
   }
   const tag = homeTag(env.data.FRM_HOME);
   const jobs = assertJobRunners(JOB_RUNNERS, RUNNER_IDS);
   if (!jobs.ok) {
-    log.fatal({ error: jobs.error }, "the supervisor could not start");
-    process.exitCode = 1;
+    cannotStart("the supervisor could not start", jobs.error, 1);
     return;
   }
 
@@ -170,8 +196,15 @@ async function main(): Promise<void> {
     }),
     slots,
   };
+  // FRM_MCP_URL, else this home's own API (its install.json, FRM_API_PORT): never the default
+  // install's port by accident. With neither, http://127.0.0.1:3010/mcp as before.
+  const resolvedMcp = installMcpUrl(process.env);
+  if (!resolvedMcp.ok) {
+    cannotStart("the supervisor could not start", resolvedMcp.error, 2);
+    return;
+  }
+  const mcpUrl = resolvedMcp.value;
   const adapters = loadAdapters(log);
-  const mcpUrl = env.data.FRM_MCP_URL ?? DEFAULT_MCP_URL;
   // Every executor row this process can run: container executors over ssh, each holding
   // its /mcp tunnel, beside the local one. The lifecycle loads them at boot; exit closes them.
   const placement = createPlacement({
@@ -211,7 +244,7 @@ async function main(): Promise<void> {
       lifecycleDb = deps.db;
       return processLifecycle(
         adapters,
-        env.data.FRM_MCP_URL,
+        mcpUrl,
         local,
         placement,
         tag,
@@ -223,9 +256,8 @@ async function main(): Promise<void> {
     onFatal: () => void exit(1),
   });
   if (!started.ok) {
-    log.fatal({ error: started.error }, "the supervisor could not start");
+    cannotStart("the supervisor could not start", started.error, 1);
     await placement.close();
-    process.exitCode = 1;
     return;
   }
   current.supervisor = started.value;
@@ -375,6 +407,15 @@ async function main(): Promise<void> {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => void exit(0));
   }
+  // What a person at the terminal needs, in a few lines; the JSON log has it all at info.
+  const ready = [
+    `supervisor ${version} ready`,
+    `  home      ${env.data.FRM_HOME}`,
+    `  sessions  call ${mcpUrl}`,
+    `  socket    ${socketPath(env.data.FRM_HOME)}`,
+  ];
+  if (output.format === "human") process.stdout.write(`${ready.join("\n")}\n`);
+  else log.info({ mcpUrl, socket: socketPath(env.data.FRM_HOME) }, "ready");
 }
 
 await main();

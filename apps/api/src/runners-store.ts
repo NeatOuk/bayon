@@ -4,6 +4,7 @@ import {
   containerRefusal,
   disabledExecutorRefusal,
   err,
+  isAgentRunner,
   ok,
   type Result,
 } from "@bayon/core";
@@ -11,12 +12,10 @@ import {
   getExecutor,
   getModel,
   getRunner,
-  listBoundModels,
   listModels,
   listRunnerCertifications,
   listRunners,
   openRunnerUpdates,
-  type BoundModel,
   type Db,
   type ModelRow,
   type OpenRunnerUpdate,
@@ -31,7 +30,7 @@ import {
 } from "@bayon/proto";
 import { z } from "zod";
 import { parseAs } from "./dto.js";
-import { modelView } from "./models-store.js";
+import { modelUses, modelView, type ModelUse } from "./models-store.js";
 import type { ApiStore } from "./store.js";
 
 // The runners half of the ApiStore: runners and their certification per (executor,
@@ -94,7 +93,7 @@ const runnerUpdateView = (u: OpenRunnerUpdate): RunnerUpdateView => ({
 /** A runner's non-retired models, each with the roles whose binding runs it. */
 const modelViews = (
   models: readonly ModelRow[],
-  bound: readonly BoundModel[],
+  bound: readonly ModelUse[],
   runnerId: string,
   active: boolean,
 ) =>
@@ -117,7 +116,7 @@ async function modelOf(
   const refuse = (why: string) =>
     err({
       class: "validation" as const,
-      message: `model ${modelId} ${why}: pick one of runner ${runnerId}'s active models (GET /runners)`,
+      message: `model ${modelId} ${why}: pick one of the models the Runners page lists for ${runnerId}`,
       retryable: false,
     });
   if (!model.ok) {
@@ -138,7 +137,7 @@ export function runnersStore(db: Db): RunnersStore {
       if (!certs.ok) return certs;
       const models = await listModels(db);
       if (!models.ok) return models;
-      const bound = await listBoundModels(db);
+      const bound = await modelUses(db);
       if (!bound.ok) return bound;
       const updates = await openRunnerUpdates(db);
       if (!updates.ok) return updates;
@@ -178,6 +177,14 @@ export function runnersStore(db: Db): RunnersStore {
     async conformanceTarget(runnerId, executorId, modelId, compression) {
       const runner = await getRunner(db, runnerId);
       if (!runner.ok) return runner;
+      // A job runner is the supervisor's own fixed program: the suite judges an agent.
+      if (!isAgentRunner(runner.value)) {
+        return err({
+          class: "validation",
+          message: `runner ${runnerId} is one of the supervisor's own jobs, not an agent runner: there is nothing to certify`,
+          retryable: false,
+        });
+      }
       const model = await modelOf(db, runnerId, modelId);
       if (!model.ok) return model;
       const executor = await getExecutor(db, executorId);

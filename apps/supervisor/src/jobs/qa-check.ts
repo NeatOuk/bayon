@@ -103,7 +103,7 @@ async function resolveSecrets(
     if (!value.ok) {
       return {
         ok: false,
-        why: `${value.error.message}: this project's QA harness declares it, so the harness was not run and the gate decides nothing about this change (§14)`,
+        why: `${value.error.message}: this project's QA harness declares it, so the harness was not run and the gate decides nothing about this change. Store the secret, then run the gate again`,
       };
     }
     found.push([name.value, value.value] as const);

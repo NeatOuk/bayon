@@ -1,9 +1,11 @@
 // `projects.local_roots` (§14): the folders `POST /projects` may take a bare path from.
 // The GUI can be served on the LAN with the operator's bearer added by its proxy, so a path door
 // there would let anyone who reaches the page point an agent at any git repo on the host. Off by
-// default (`[]`), shell-only like every security control (core SHELL_ONLY_SETTINGS): it changes
-// only through the operator door (§9.5), audited. `frm project add --repo <path>` needs none of it —
-// whoever runs that is already at the operator's shell.
+// default (`[]`), and a security control (core SHELL_ONLY_SETTINGS): replaced or revoked only through
+// the operator door (§9.5), audited. One exception (§14 amendment): `POST /folders/allow`
+// may **append** one folder, only for a browser proven to be on the host itself (the web proxy's
+// host-only key on a loopback socket), audited as `settings.put` via `gui-local`. `frm project add
+// --repo <path>` needs none of it — whoever runs that is already at the operator's shell.
 import { z } from "zod";
 import { GRANTED_PATH } from "../login-in-place.js";
 

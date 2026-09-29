@@ -94,7 +94,7 @@ test("a rate-capped skip says why, and that no session ran", async () => {
 test("an unknown pulse shows the server's error", async () => {
   stubFetch({});
   renderWithProviders(<PulseScreen pulseId="P-1" />);
-  expect((await screen.findByRole("alert")).textContent).toContain("not_found");
+  expect((await screen.findByRole("alert")).textContent).toContain("/api/v1/");
 });
 
 test("a pulses frame refetches the open pulse", async () => {

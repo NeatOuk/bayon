@@ -2,7 +2,8 @@ import type { RunnerView } from "@bayon/proto";
 
 // A runner's certification on one executor (§15), as the Add agent dialog shows it: the
 // operator sees an uncertified pick before making it. The write never waits on it. Certification is
-// per model: the runner counts as certified there when every model a role runs is. And
+// per model: the runner counts as certified there when every model in use is — one a
+// role binding, a project's step tier or an enabled agent runs. And
 // per context compression: the normal badge counts the certificates earned with it off;
 // asked for `compression`, the ones earned with it on, which a project that compresses needs.
 
@@ -19,7 +20,8 @@ export type CertificationState = (typeof CERTIFICATION_STATES)[number];
 
 /**
  * The models whose certification decides the runner's (a certificate holds for one
- * model): the ones a role binding or a project's step tier runs, else every active one.
+ * model): the ones in use — a role binding's, a project's step tier's or an enabled
+ * agent's, as GET /runners' bound_roles lists them — else every active one.
  */
 const modelsThatCount = (runner: RunnerView): readonly string[] => {
   const bound = runner.models.filter((m) => m.bound_roles.length > 0);

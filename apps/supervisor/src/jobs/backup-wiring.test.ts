@@ -101,3 +101,37 @@ test("boot sweeps a killed backup's snapshot and a killed restore's copy; fresh 
   for (const file of fresh) expect(existsSync(file), file).toBe(true);
   expect(existsSync(path)).toBe(true);
 });
+
+test("no backup key anywhere: one warn line naming the command, never a failed row, not repeated", async () => {
+  const { db, home } = await fixture();
+  const lines: { level: number; msg: string }[] = [];
+  const captured = pino(
+    { level: "trace" },
+    { write: (line: string) => void lines.push(JSON.parse(line)) },
+  );
+  const none = {
+    env: envSecrets({}),
+    host: envSecrets({}),
+    hostSource: "keychain" as const,
+  };
+  const wiring = wireBackups({
+    db,
+    clock,
+    log: captured,
+    home,
+    secrets: none,
+    recheckMs: 60_000,
+  });
+  await until(async () => lines.some((l) => l.level === 40));
+  // Later ticks find it still missing and say nothing more.
+  for (let i = 0; i < 3; i += 1) await clock.advance(60_000);
+  await wiring.stop();
+  expect(lines.filter((l) => l.level >= 40)).toEqual([
+    expect.objectContaining({
+      level: 40,
+      msg: "backups are off until you run: pnpm frm backup init-key",
+    }),
+  ]);
+  expect(unwrap(await getLastBackup(db))).toBeNull();
+  expect(existsSync(backupsDir(home))).toBe(false);
+});

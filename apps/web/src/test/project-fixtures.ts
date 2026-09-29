@@ -46,6 +46,7 @@ export const projectView = (
       max_concurrency: 1,
       model: "model-mid",
       model_id: "fixture.standard",
+      has_mission: false,
     },
     {
       id: "bayon-reviewer",
@@ -56,9 +57,12 @@ export const projectView = (
       max_concurrency: 1,
       model: null,
       model_id: null,
+      has_mission: false,
     },
   ],
   open_tickets: 3,
+  has_builder: true,
+  has_reviewer: true,
   paused: false,
   staff_approval: false,
   jira: null,
@@ -110,6 +114,7 @@ export const projectAgent = (
   max_concurrency: 1,
   model: "model-mid",
   model_id: "fixture.standard",
+  has_mission: false,
   ...agent,
 });
 

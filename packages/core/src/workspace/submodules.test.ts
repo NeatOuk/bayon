@@ -138,7 +138,7 @@ describe("childrenOf", () => {
   test("an unknown submodule is refused, never mirrored (§3.2)", () => {
     const r = childrenOf(node(), []);
     expect(!r.ok && r.error.message).toBe(
-      `submodule "libs/mid" (url "../mid") of repo super at ${SUPER.slice(0, 12)} is not a repo of this workspace: add a repos row and a workspace_repos row with submodule_path "libs/mid"`,
+      `submodule "libs/mid" (url "../mid") of repo super at ${SUPER.slice(0, 12)} is not a repo of this workspace: add its repo to the workspace as the submodule at "libs/mid"`,
     );
     expect(!r.ok && r.error.class).toBe("validation");
   });

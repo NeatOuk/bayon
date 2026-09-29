@@ -1,11 +1,17 @@
 // The worktree sweep's pass (§9.6 step 6, §9.2; the design): every row not
 // removed, oldest first, one at a time. Phase A checks outside any mutex and only flags; a row that
 // may go runs phase B (remove.ts) inside its mirror's mutex. Then the stale mirror temp dirs. The
-// pass aborts, writing nothing, when $FRM_HOME/work is missing (M3).
+// pass aborts, writing nothing, when $FRM_HOME/work is missing (M3), except on a home that never had
+// a worktree row (a fresh install): there it makes work/ quietly and carries on.
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { sweepVisit, type SweepFlag } from "@bayon/core";
 import { originGitAuth } from "../../forge/credential.js";
-import { listSweepWorktrees, type SweepWorktree } from "@bayon/db";
+import {
+  everHadWorktree,
+  listSweepWorktrees,
+  type SweepWorktree,
+} from "@bayon/db";
 import {
   clearWorktreeFlag,
   flagWorktree,
@@ -61,15 +67,27 @@ export async function sweepPass(
     minGapMs: settings.minGapMs,
   };
   const work = join(deps.frmHome, "work");
-  if ((await lstatOrNull(work).catch(() => null))?.isDirectory() !== true) {
-    const aborted = `${work} is missing: an unmounted volume never reads as every worktree gone`;
-    deps.log.error({ work }, `sweep: ${aborted}`);
-    return { ...cadence, ...count, aborted };
-  }
   const rows = await listSweepWorktrees(deps.db);
   if (!rows.ok) {
     deps.log.error({ error: rows.error }, "sweep: cannot list the worktrees");
     return { ...cadence, ...count, aborted: rows.error.message };
+  }
+  if ((await lstatOrNull(work).catch(() => null))?.isDirectory() !== true) {
+    // A home that never had a worktree row (removed ones count) is a fresh install: it gets its
+    // folder. Any other: an unmounted volume must never read as every worktree gone.
+    const ever = await everHadWorktree(deps.db);
+    const made =
+      ever.ok && !ever.value
+        ? await mkdir(work, { recursive: true, mode: 0o700 }).then(
+            () => true,
+            () => false,
+          )
+        : false;
+    if (!made) {
+      const aborted = `The worktree folder ${work} is missing, so the cleanup removed nothing: if it is on a volume, mount it; if it was deleted, restore it from a backup.`;
+      deps.log.error({ work }, `sweep: ${aborted}`);
+      return { ...cadence, ...count, aborted };
+    }
   }
   const ps: PassState = {
     now: deps.clock.now(),

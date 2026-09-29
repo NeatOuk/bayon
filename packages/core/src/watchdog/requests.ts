@@ -15,6 +15,8 @@ export const SystemRequestRule = z.enum([
   "retry_storm",
   "budget_pulse",
   "delivery",
+  // a spawn whose repo cannot be read — only the operator can fix a URL or an access.
+  "repo",
 ]);
 export type SystemRequestRule = z.infer<typeof SystemRequestRule>;
 
@@ -26,6 +28,7 @@ export const SYSTEM_REQUEST_KIND: Readonly<Record<SystemRequestRule, string>> =
     retry_storm: "retry_storm",
     budget_pulse: "budget",
     delivery: "delivery",
+    repo: "repo_access",
   };
 
 /** Caps on what a system request carries (Invariant 9 in spirit: ids and states, never bodies). */

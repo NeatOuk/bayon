@@ -12,13 +12,16 @@ export const API_BASE = "/api/v1";
 
 type WireError = ApiErrorBody["error"];
 
-/** A failed API call. `error` is the server's own when it sent one. */
+/**
+ * A failed API call. `error` is the server's own when it sent one. The message is the server's
+ * sentence alone, as the operator reads it; the class stays on `error.class` for code and logs.
+ */
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly error: WireError;
 
   constructor(status: number, error: WireError) {
-    super(`${error.class}: ${error.message}`);
+    super(error.message);
     this.name = "ApiRequestError";
     this.status = status;
     this.error = error;
@@ -52,7 +55,7 @@ async function request(
       ? body.data.error
       : {
           class: "internal",
-          message: `HTTP ${response.status} from ${path}`,
+          message: `The server answered HTTP ${response.status} for ${path}: check that the API is running, then try again.`,
           retryable: response.status >= 500,
         },
   );
@@ -66,9 +69,14 @@ async function parsedBody<T>(
 ): Promise<T> {
   const parsed = schema.safeParse(await readJson(response));
   if (parsed.success) return parsed.data;
+  // The schema's own complaint is for a developer: the console has it, the headline does not.
+  console.warn(
+    `unexpected response from ${path}`,
+    z.prettifyError(parsed.error),
+  );
   throw new ApiRequestError(response.status, {
     class: "validation",
-    message: `unexpected response from ${path}: ${z.prettifyError(parsed.error)}`,
+    message: `The server's answer for ${path} could not be read: reload the page to get the GUI that matches it.`,
     retryable: false,
   });
 }

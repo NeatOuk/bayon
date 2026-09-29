@@ -15,3 +15,4 @@ export const PTY_HUB = Symbol("PTY_HUB");
 export const HISTORY_SERVICE = Symbol("HISTORY_SERVICE");
 export const JIRA_SERVICE = Symbol("JIRA_SERVICE");
 export const NOTIFICATIONS_SERVICE = Symbol("NOTIFICATIONS_SERVICE");
+export const FOLDERS_SERVICE = Symbol("FOLDERS_SERVICE");

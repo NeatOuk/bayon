@@ -1,4 +1,5 @@
-// The control socket at $FRM_HOME/s.sock: newline-delimited JSON, operator-only (0600). A live
+// The control socket at <socket dir>/s.sock (FRM_HOME itself, or a short private dir for a long
+// home): newline-delimited JSON, operator-only (0600). A live
 // socket is never replaced; the supervisor lock (lock.ts), taken first, keeps one supervisor per
 // FRM_HOME.
 import { chmodSync, lstatSync, rmSync, unlinkSync } from "node:fs";
@@ -15,11 +16,12 @@ import {
   type FrmError,
   type Result,
 } from "@bayon/core";
+import { SOCKET_PATH_MAX_BYTES } from "@bayon/executors";
 import type { Logger } from "pino";
 import { z } from "zod";
 
 /** macOS allows 104 bytes in sun_path, NUL included (Linux 108); the stricter limit applies. */
-export const SOCKET_PATH_MAX_BYTES = 104;
+export { SOCKET_PATH_MAX_BYTES };
 /** A connection that sends more than this without a newline is closed. */
 const MAX_LINE_BYTES = 64 * 1024;
 
@@ -56,7 +58,7 @@ export function checkSocketPath(path: string): Result<void> {
     : fail(
         "validation",
         `control socket path ${path} is ${bytes} bytes; a unix socket path must fit in ` +
-          `${SOCKET_PATH_MAX_BYTES} bytes with its NUL: use a shorter FRM_HOME`,
+          `${SOCKET_PATH_MAX_BYTES} bytes with its NUL`,
       );
 }
 

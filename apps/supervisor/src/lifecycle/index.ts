@@ -15,6 +15,7 @@ import {
 } from "../watchdog/watchdog.js";
 import type { LifecycleFactory } from "../supervisor.js";
 import { createAdmission } from "./admission.js";
+import { remotePolicy } from "./remote-policy.js";
 import { takeAttachIntent } from "./attach-intent.js";
 import { onCommitted } from "./ceilings.js";
 import {
@@ -198,6 +199,12 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       return executors;
     },
     path: deps.path ?? process.env.PATH ?? "/usr/bin:/bin",
+    remote: remotePolicy(deps.db, {
+      ...(deps.resolveHost === undefined ? {} : { resolve: deps.resolveHost }),
+      ...(deps.remoteProtocols === undefined
+        ? {}
+        : { protocols: deps.remoteProtocols }),
+    }),
     mcpUrl: deps.mcpUrl ?? DEFAULT_MCP_URL,
     mcpReachable: deps.mcpReachable ?? httpReachable,
     live: new Map(),
@@ -255,7 +262,8 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   };
   let unsubscribe = (): void => undefined;
   return {
-    handlers: commandHandlers(ctx),
+    // A repo check in flight is stopped with the lifecycle (review L3).
+    handlers: commandHandlers(ctx, loop.signal),
     async boot() {
       const templates = await upsertPromptTemplates(
         ctx.db,
@@ -420,6 +428,7 @@ export function lifecycleFactory(host: LifecycleHost): LifecycleFactory {
     deps.claimer.register(lifecycle.handlers.health);
     deps.claimer.register(lifecycle.handlers.attach);
     deps.claimer.register(lifecycle.handlers.detach);
+    deps.claimer.register(lifecycle.handlers.repoCheck);
     return lifecycle;
   };
 }

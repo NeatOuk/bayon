@@ -158,7 +158,7 @@ test("the server's refusal is shown as it came", async () => {
   await user.type(keep, "30");
   await save(user);
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "Not saved: validation: backup.keep: too big",
+    "Not saved: backup.keep: too big",
   );
 });
 

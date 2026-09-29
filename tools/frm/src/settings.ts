@@ -27,6 +27,7 @@ import {
   NOTIFY_EMAIL_TO_KEY,
   ok,
   OPERATOR_SETTINGS,
+  PRIVATE_REPO_HOSTS_KEY,
   READS_GRANTED_LOGIN,
   readsGrantedLogin,
   REQUIRE_CERTIFIED_KEY,
@@ -64,13 +65,13 @@ export const SECURITY_CONTROLS: readonly string[] = Object.keys(
  */
 const EFFECTS: Readonly<Record<string, string>> = {
   [REQUIRE_CERTIFIED_KEY]:
-    "1 refuses a spawn whose runner is not certified on its executor (§15); " +
+    "1 refuses a spawn whose runner has not passed certification on its executor; " +
     "0 lets a runner nobody has certified run unattended",
   [UNTRUSTED_ROLES_KEY]:
     "the host's isolation boundary: a role on this list runs only on a trust='untrusted' " +
     "(container) executor, and a role taken off it may run on the trusted host",
   [LOGIN_IN_PLACE_KEY]:
-    "consent (§14): a runner named here reads the login file named with it — the one its own CLI " +
+    "consent: a runner named here reads the login file named with it — the one its own CLI " +
     "keeps on this host — instead of a copy in the secret store, and writes the rotated " +
     "credential back to that same file. Bayon reads no login file it was not given here, and " +
     "`none` revokes. Grant only a file you are content for that runner to read and replace, and " +
@@ -80,6 +81,12 @@ const EFFECTS: Readonly<Record<string, string>> = {
     "path is inside one of these, and an agent then works on a copy of it. The form can be " +
     "served on the LAN, so allow only folders you are content for anyone who reaches it to hand " +
     "to an agent. `none` revokes; frm project add takes a path without it",
+  [PRIVATE_REPO_HOSTS_KEY]:
+    "New project and every session read a project's repo from its URL; a URL on this machine " +
+    "(localhost, 127.x) or on a private network (10.x, 172.16-31.x, 192.168.x, fc00::/7) is " +
+    "refused unless its host is listed here. The form can be served on the LAN, so list only " +
+    "your own git servers: anyone who reaches it could point Bayon at them. Link-local and " +
+    "cloud metadata addresses are never allowed. `none` revokes",
   [NOTIFY_EMAIL_TO_KEY]:
     "where the notifier mails every notification the email channel sends (agents' questions, " +
     "ticket titles, failures). Set only an address you read; an empty string stops the mail",
@@ -110,7 +117,8 @@ export const SETTINGS_USAGE = [
   `  no schema governs. The gated keys (${SECURITY_CONTROLS.join(", ")}) print what the`,
   "  value does and need --yes. The GUI shows the security controls read-only, because it can be",
   "  served on the LAN with the operator's bearer; the notifier's three destinations it may change,",
-  "  through PUT /notifications/config alone, where each change is audited and announced.",
+  "  on its Notifications page, where each change is audited and announced.",
+  "  projects.local_roots takes the whole list, comma-separated: frm roots adds or removes one folder.",
 ].join("\n");
 
 const invalid = (message: string): Result<never> =>
@@ -200,6 +208,9 @@ function localRootsOf(raw: string): JsonValue {
 export function settingValueOf(key: string, raw: string): Result<JsonValue> {
   if (key === LOGIN_IN_PLACE_KEY) return loginGrantsOf(key, raw);
   if (key === LOCAL_ROOTS_KEY) return ok(localRootsOf(raw));
+  // Host names as a URL names them: the same comma list, lower-cased.
+  if (key === PRIVATE_REPO_HOSTS_KEY)
+    return ok(localRootsOf(raw.toLowerCase()));
   if (key === UNTRUSTED_ROLES_KEY) {
     const text = raw.trim();
     if (text === "" || text === "none") return ok([]);
@@ -298,6 +309,7 @@ export function defaultOf(key: string): string {
   if (key === UNTRUSTED_ROLES_KEY) return '["investigator"]';
   if (key === LOGIN_IN_PLACE_KEY) return "{}"; // 026: consent granted to nobody
   if (key === LOCAL_ROOTS_KEY) return "[]"; // 027: no folder allowed
+  if (key === PRIVATE_REPO_HOSTS_KEY) return "[]"; // no row: no private host allowed
   if (NOTIFY_STRING_KEYS.includes(key)) return '""'; // the notifications migration: unset
   return key === AGENT_GIT_AUTHOR_KEY ? "the built-in agent identity" : "none";
 }
@@ -318,7 +330,32 @@ function report(
   if (effect !== undefined) out(`  security control: ${effect}`);
 }
 
-function said(w: SettingWrite): string {
+/**
+ * The --yes gate every door to a security control goes through (`frm settings set`, `frm roots
+ * add|remove`): the key's effect and the change are printed before anything is read or written,
+ * --yes or not; false (exit 2) when the key is a security control and --yes is missing.
+ */
+export function securityConsent(
+  c: {
+    readonly name: string;
+    readonly key: string;
+    readonly change: string;
+    readonly yes: boolean;
+  },
+  io: Pick<SettingsIo, "out" | "err">,
+): boolean {
+  if (!needsYes(c.key)) return true;
+  io.out(`${c.key}: ${EFFECTS[c.key] ?? ""}`);
+  io.out(c.change);
+  if (c.yes) return true;
+  io.err(
+    `${c.name}: ${c.key} is a security control: repeat the command with --yes`,
+  );
+  return false;
+}
+
+/** What a write did, as `frm settings set` and `frm roots` report it. */
+export function said(w: SettingWrite): string {
   return w.changed
     ? `${w.key}: ${w.from === null ? "(not set)" : shown(w.from)} -> ${shown(w.to)} (audited: settings.put via frm)`
     : `${w.key}: already ${shown(w.to)}; nothing written`;
@@ -369,17 +406,19 @@ export async function runSettingsCommand(
   io: SettingsIo,
 ): Promise<number> {
   const name = `frm settings ${cmd.action}`;
-  // A security control is explained before anything is read or written, --yes or not.
-  if (cmd.action === "set" && needsYes(cmd.key)) {
-    io.out(`${cmd.key}: ${EFFECTS[cmd.key] ?? ""}`);
-    io.out(`setting it to ${shown(cmd.value)}`);
-    if (!cmd.yes) {
-      io.err(
-        `${name}: ${cmd.key} is a security control: repeat the command with --yes`,
-      );
-      return 2;
-    }
-  }
+  if (
+    cmd.action === "set" &&
+    !securityConsent(
+      {
+        name,
+        key: cmd.key,
+        change: `setting it to ${shown(cmd.value)}`,
+        yes: cmd.yes,
+      },
+      io,
+    )
+  )
+    return 2;
   const path = dbPathOf(io.env, "the database the settings are in");
   if (!path.ok) {
     io.err(`${name}: ${path.error.message}`);

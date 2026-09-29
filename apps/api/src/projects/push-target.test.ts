@@ -62,7 +62,8 @@ let t: TempDb;
 let service: ProjectsService;
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), "frm-push-"));
+  // Real: an allowed folder is used only when it is its own real path (macOS: /var → /private/var).
+  dir = realpathSync(mkdtempSync(join(tmpdir(), "frm-push-")));
   root = join(dir, "allowed");
   mkdirSync(root, { recursive: true });
   t = unwrap(await tempDb(new FakeClock(1_700_000_000_000)));
@@ -351,7 +352,7 @@ describe("Detect", () => {
     const found = unwrap(await service.detectPushTargets("demo"));
     expect(found.targets[0]?.detected).toBeNull();
     expect(found.targets[0]?.warning).toMatch(
-      /is not an existing folder inside/,
+      /^Agents are not allowed to use /,
     );
   });
 });

@@ -383,7 +383,7 @@ export async function buildSession(w: World, hang: boolean): Promise<void> {
     if (!row.ok) return row;
     return verdict(spendProblems(row.value === null ? [] : [row.value]));
   });
-  await w.h.step("run 1 recorded every §8.1 hash and the model", () =>
+  await w.h.step("run 1 recorded every input hash and the model", () =>
     runChecks(w, id),
   );
 }

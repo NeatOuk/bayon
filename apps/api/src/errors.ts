@@ -94,7 +94,13 @@ export const wireFields = (
   ...admissionFields(error),
 });
 
-/** 5xx bodies name the class only; the details go to the server log. */
+/** What a 5xx says: plain words and one thing to do. The class and cause go to the server log. */
+export const serverFailure = (errorClass: ErrorClass): string =>
+  errorClass === "db_busy"
+    ? "The database is busy: try again in a moment."
+    : "Something went wrong on the server: try again, and if it keeps failing, check the API's log.";
+
+/** 5xx bodies keep the class and a plain sentence only; the details go to the server log. */
 function toResponse(exception: unknown): {
   readonly status: number;
   readonly error: WireError;
@@ -105,8 +111,7 @@ function toResponse(exception: unknown): {
       status: exception.status,
       error: {
         class: errorClass,
-        message:
-          exception.status >= 500 ? `request failed: ${errorClass}` : message,
+        message: exception.status >= 500 ? serverFailure(errorClass) : message,
         retryable,
         ...wireFields(exception.error),
       },
@@ -120,7 +125,7 @@ function toResponse(exception: unknown): {
       error: {
         class:
           CLASS_BY_STATUS[status] ?? (internal ? "internal" : "validation"),
-        message: internal ? "request failed: internal" : exception.message,
+        message: internal ? serverFailure("internal") : exception.message,
         retryable: false,
       },
     };
@@ -129,7 +134,7 @@ function toResponse(exception: unknown): {
     status: 500,
     error: {
       class: "internal",
-      message: "request failed: internal",
+      message: serverFailure("internal"),
       retryable: false,
     },
   };

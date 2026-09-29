@@ -171,11 +171,11 @@ const send = (h: SessionHandle, runId = "run-1") =>
   adapter.send(h, { runId, text: "go", promptPath: "/prompts/run.md" });
 
 describe("the generic script adapter", () => {
-  test("registers one runner row per instance, kind script, not resumable, not billed", () => {
+  test("registers one runner row per instance, kind job (not an agent), not resumable, not billed", () => {
     const reg = adapter.registration();
     expect(reg.runner).toMatchObject({
       id: "script-test",
-      kind: "script",
+      kind: "job",
       adapter: "script-test",
       versionDetected: "1",
       defaults: { argv: [JOB] },

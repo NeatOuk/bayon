@@ -37,13 +37,13 @@ export async function chooseQaJob(
   if (adapter === undefined) {
     return ok({
       found: null,
-      detail: `qa_harness runs the ${QA_RUNNER_ID} job, and this supervisor has no adapter for it`,
+      detail: `The QA check needs the ${QA_RUNNER_ID} job, which this supervisor does not have: waive this gate, or run a supervisor built with it`,
     });
   }
   if (i.subjectExecutorId !== LOCAL_EXECUTOR_ID) {
     return ok({
       found: null,
-      detail: `qa_harness runs this project's own QA command, and this subject was built on executor ${i.subjectExecutorId}: running its harness on the supervisor's host would put untrusted code on the trusted side of §9.8. Set this project's QA mode to none and pass its QA by hand with an override note, or waive this gate.`,
+      detail: `The QA check runs this project's own QA command, and this change was built on executor ${i.subjectExecutorId}: running its harness on the supervisor's host would run untrusted code outside its sandbox. Set this project's QA mode to none and pass its QA by hand with an override note, or waive this gate.`,
     });
   }
   const agents = await listUtilAgents(i.db, QA_RUNNER_ID);
@@ -52,7 +52,7 @@ export async function chooseQaJob(
   if (agent === undefined) {
     return ok({
       found: null,
-      detail: `qa_harness runs the ${QA_RUNNER_ID} job, and no enabled kind='util' agent of it exists: seed the QA checker's rows with \`frm config apply\``,
+      detail: `The QA check needs the ${QA_RUNNER_ID} job's agent, and none is enabled: add the QA checker with \`frm config apply <file.json>\``,
     });
   }
   return ok({

@@ -186,6 +186,10 @@ export {
   insertNotifications,
   settleDelivery,
 } from "./repos/notifications.js";
+// `projects.local_roots` from the GUI (§14 amendment): append one folder, never replace,
+// audited as the operator's; the API calls it only for a request from a browser on this host.
+export type { LocalRootAdded } from "./repos/local-roots.js";
+export { LOCAL_ROOTS_VIA_GUI, addLocalRoot } from "./repos/local-roots.js";
 // The notifier's three destination settings (§14): the one API door to them, each change
 // audited as `notify.config` with both values, in the transaction that writes the setting.
 export type { NotifyConfigChange } from "./repos/notify-config.js";

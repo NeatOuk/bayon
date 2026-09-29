@@ -85,7 +85,10 @@ async function declaresSubmodules(
   );
   return run.ok
     ? ok(run.stdout !== "")
-    : invalid(`${dir} has no commit to read: ${run.detail}`);
+    : invalid(
+        `${JSON.stringify(dir)} has no commit on its current branch yet. ` +
+          `Make a first commit there, or switch to a branch that has one, then try again.`,
+      );
 }
 
 async function submoduleOf(
@@ -94,7 +97,7 @@ async function submoduleOf(
   root: string,
   path: string,
 ): Promise<Result<FoundSubmodule>> {
-  const dir = await allowedLocalRepo(db, join(root, path));
+  const dir = await allowedLocalRepo(db, join(root, path), git);
   if (!dir.ok) {
     return invalid(
       `submodule ${path}: ${dir.error.message}. It must be checked out in the folder (git submodule update --init)`,
@@ -155,7 +158,7 @@ export async function localProject(
   path: string,
   git: GitRunner = runGit(),
 ): Promise<Result<LocalProject>> {
-  const origin = await allowedLocalRepo(db, path);
+  const origin = await allowedLocalRepo(db, path, git);
   if (!origin.ok) return origin;
   const root = origin.value;
   const base = await baseOf(git, root);

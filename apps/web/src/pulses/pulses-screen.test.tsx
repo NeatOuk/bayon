@@ -92,7 +92,7 @@ test("no pulses yet, and a failed read, each say so", async () => {
   renderWithProviders(<PulsesScreen />);
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("The pulses are unavailable")).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
   expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
 });
 

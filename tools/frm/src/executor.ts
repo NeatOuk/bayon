@@ -135,7 +135,7 @@ const isFlagless = (action: string | undefined): action is Flagless =>
 const invalid = (message: string): Result<never> =>
   err({ class: "validation", message, retryable: false });
 
-const FLAGS = {
+export const EXECUTOR_FLAGS = {
   host: { type: "string" },
   port: { type: "string" },
   user: { type: "string" },
@@ -151,7 +151,9 @@ const FLAGS = {
   "untrusted-roles": { type: "string" },
   "replace-untrusted-roles": { type: "string" },
 } as const;
-type Flags = { readonly [K in keyof typeof FLAGS]?: string | undefined };
+type Flags = {
+  readonly [K in keyof typeof EXECUTOR_FLAGS]?: string | undefined;
+};
 
 function readFlags(argv: readonly string[]) {
   try {
@@ -160,7 +162,7 @@ function readFlags(argv: readonly string[]) {
         args: [...argv],
         allowPositionals: true,
         strict: true,
-        options: FLAGS,
+        options: EXECUTOR_FLAGS,
       }),
     );
   } catch (cause) {

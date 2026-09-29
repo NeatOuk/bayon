@@ -26,6 +26,8 @@ export const CommandType = z.enum([
   // M5 (§12.5): the operator takes or releases a session's attach (terminal takeover) lease.
   "session.attach",
   "session.detach",
+  // M13: whether a repo URL can be read the way the mirror clone reads it.
+  "repo.check",
 ]);
 export type CommandType = z.infer<typeof CommandType>;
 export const COMMAND_TYPES = CommandType.options;
@@ -229,6 +231,17 @@ export const ExecutorHealthResult = z.object({
 });
 export type ExecutorHealthResult = z.infer<typeof ExecutorHealthResult>;
 
+/**
+ * `repo.check`: `git ls-remote` of `url`, run by the supervisor with the credential its
+ * mirror clone would be offered. `base`, when given, is looked for among the remote's branches.
+ * Result: core's RepoCheckResult.
+ */
+export const RepoCheckPayload = z.object({
+  url: z.string().min(1).max(2_000),
+  base: z.string().min(1).max(200).optional(),
+});
+export type RepoCheckPayload = z.infer<typeof RepoCheckPayload>;
+
 /** A command as stored: `type` plus the payload that type requires. */
 export const Command = z.discriminatedUnion("type", [
   z.object({
@@ -282,6 +295,10 @@ export const Command = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(CommandType.enum["session.detach"]),
     payload: SessionDetachPayload,
+  }),
+  z.object({
+    type: z.literal(CommandType.enum["repo.check"]),
+    payload: RepoCheckPayload,
   }),
 ]);
 export type Command = z.infer<typeof Command>;

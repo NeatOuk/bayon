@@ -1,5 +1,6 @@
 import { err, ok, type Result } from "@bayon/core";
 import {
+  agentBoundModels,
   getModel,
   getRunner,
   listBoundModels,
@@ -46,10 +47,26 @@ export function storedSettings(json: string): Settings {
   }
 }
 
-/** One models row as GET /runners shows it, with the roles whose binding runs it. */
+/** Who runs a model: a role binding, a project's step tier, or an enabled agent. */
+export type ModelUse = Pick<BoundModel, "role" | "model_id">;
+
+/**
+ * Every use of every model, as GET /runners' bound_roles lists them: the role bindings' and step
+ * tiers' (listBoundModels), then each enabled agent's own (agentBoundModels) — a new project's agents
+ * run their profile's tier with neither, and that is the model they need certified.
+ */
+export async function modelUses(db: Db): Promise<Result<ModelUse[]>> {
+  const bound = await listBoundModels(db);
+  if (!bound.ok) return bound;
+  const agents = await agentBoundModels(db);
+  if (!agents.ok) return agents;
+  return ok([...bound.value, ...agents.value]);
+}
+
+/** One models row as GET /runners shows it, with who runs it. */
 export const modelView = (
   m: ModelRow,
-  bound: readonly BoundModel[],
+  bound: readonly ModelUse[],
 ): RunnerModelView => ({
   id: m.id,
   tier: m.tier,
@@ -111,7 +128,7 @@ async function reply(
 ): Promise<Result<ModelWriteReply>> {
   const row = await getModel(db, id);
   if (!row.ok) return row;
-  const bound = await listBoundModels(db);
+  const bound = await modelUses(db);
   if (!bound.ok) return bound;
   return ok({
     model: modelView(row.value, bound.value),

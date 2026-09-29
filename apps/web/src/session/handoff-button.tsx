@@ -67,8 +67,8 @@ export function HandoffButton({ session }: { readonly session: SessionView }) {
           <DialogHeader>
             <DialogTitle>Hand off this session</DialogTitle>
             <DialogDescription>
-              It writes its hand-off packet and exits; the next session on its
-              ticket takes the packet over (§7).
+              It writes a hand-off note and exits; the next session on its
+              ticket picks up from that note.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1">

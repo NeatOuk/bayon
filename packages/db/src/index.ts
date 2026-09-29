@@ -192,7 +192,11 @@ export {
   openQuestionCounts,
 } from "./repos/open-questions.js";
 // Why a ticket waits: the board's set-based pass, and one ticket's next-step facts.
-export type { NextStepDbFacts } from "./repos/ticket-waits.js";
+export type {
+  NextStepDbFacts,
+  TicketHolderFact,
+  TicketReviewingFact,
+} from "./repos/ticket-waits.js";
 export { getNextStepFacts, listWaitFacts } from "./repos/ticket-waits.js";
 export type {
   InboxAfter,
@@ -336,6 +340,12 @@ export {
   bindingModelOn,
   listBoundModels,
 } from "./repos/role-models.js";
+// The models enabled agents run, per role: uses beside the bindings' and step tiers'.
+export type { AgentBoundModel } from "./repos/agent-bound-models.js";
+export {
+  agentBoundLabel,
+  agentBoundModels,
+} from "./repos/agent-bound-models.js";
 // A project's tier per step (048): what bindingModelOn reads beside the binding's.
 export type { StepRef } from "./repos/step-tiers.js";
 export { stepTiersOf } from "./repos/step-tiers.js";
@@ -366,7 +376,7 @@ export {
 export type { BackupOutcome, BackupRow, BudgetRow } from "./schema-fleet.js";
 export type { BudgetStatus } from "./repos/budgets.js";
 export { listBudgets } from "./repos/budgets.js";
-export { getLastBackup } from "./repos/backups.js";
+export { getLastBackup, hasOkBackup } from "./repos/backups.js";
 // Encrypted backups: the key (only its id is ever shown), the file header and names.
 // The writers: writeBackup in /supervisor and /operator, restoreBackup in /operator.
 export {
@@ -434,6 +444,7 @@ export { getPromptTemplate } from "./repos/prompt-templates.js";
 // The worktree sweep's read and the arms no pulse runs for (§9, M4).
 export type { SweepWorktree } from "./repos/worktree-sweep.js";
 export {
+  everHadWorktree,
   getSweepWorktree,
   listSweepWorktrees,
 } from "./repos/worktree-sweep.js";

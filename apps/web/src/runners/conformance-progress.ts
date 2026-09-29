@@ -27,18 +27,35 @@ export function formatElapsed(ms: number): string {
 }
 
 /**
- * The model "Run conformance" offers first (a certificate is per model): the first one
- * a role binding runs, else the runner's cheap tier, else its first; null when it has none active.
+ * The models something runs (GET /runners' bound_roles): a role binding, a project's step tier or an
+ * enabled agent. What "Certify the models in use" queues, one run each.
+ */
+export const modelsInUse = (
+  models: readonly RunnerModelView[],
+): readonly RunnerModelView[] => models.filter((m) => m.bound_roles.length > 0);
+
+/**
+ * The model "Run conformance" offers first (a certificate is per model): the first one in
+ * use, else the runner's standard tier — its default, as `frm runner conformance` certifies with
+ * nothing in use — else its first; null when it has none active.
  */
 export function defaultModel(
   models: readonly RunnerModelView[],
 ): string | null {
   return (
-    models.find((m) => m.bound_roles.length > 0)?.id ??
-    models.find((m) => m.tier === "cheap")?.id ??
+    modelsInUse(models)[0]?.id ??
+    models.find((m) => m.tier === "standard")?.id ??
     models[0]?.id ??
     null
   );
+}
+
+/** One line on what a run of `model` certifies, and for whom. */
+export function modelUseText(model: RunnerModelView | undefined): string {
+  if (model === undefined) return "";
+  return model.bound_roles.length > 0
+    ? `Certifies ${model.id}, used by ${model.bound_roles.join(", ")}.`
+    : `Certifies ${model.id}, which no project, agent or role uses yet.`;
 }
 
 /**

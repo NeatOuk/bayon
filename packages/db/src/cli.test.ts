@@ -45,7 +45,7 @@ test("up, status and down --yes against a temp file", async () => {
   const down = capture();
   expect(await runCli(["down", "--db", path, "--yes"], down.io)).toBe(0);
   // `down` reverts the last migration alone, so the one pending after it is the newest.
-  expect(down.out()).toMatch(/pending\s+052_drift_rounds_max/);
+  expect(down.out()).toMatch(/pending\s+053_private_repo_hosts/);
 });
 
 test("--to stops at a version", async () => {

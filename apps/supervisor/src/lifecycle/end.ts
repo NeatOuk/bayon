@@ -1,6 +1,7 @@
 // The last edge of a session in this process, and the hand-off choke point (design,
 // §7): every end of a holding session leaves a `handoffs` row, and an `ok` exit without one is
 // abandoned (§3.2's exit law).
+import { excerpt } from "@bayon/core";
 import { getHandoff, getSession, type HandoffRow } from "@bayon/db";
 import type { HandoffReason } from "@bayon/proto";
 import type { SessionPatch } from "@bayon/db/supervisor";
@@ -121,6 +122,9 @@ export async function endSession(
   );
 }
 
+/** How much of a spawn's error a degraded packet's line quotes. */
+const WHY_MAX = 400;
+
 /** A holding session's degraded row: its `handoffs.reason` and the packet's line. */
 function degradedCause(
   edge: EndEdge,
@@ -148,7 +152,11 @@ function degradedCause(
       why:
         patch.error_class === undefined || patch.error_class === null
           ? "its spawn did not finish"
-          : `its spawn did not finish: ${patch.error_class}`,
+          : // Its repo could not be read: the plain reason, not only the class.
+            patch.error_class === "repo_unreachable" &&
+              typeof patch.error_message === "string"
+            ? `its spawn did not finish: ${excerpt(patch.error_message, WHY_MAX)}`
+            : `its spawn did not finish: ${patch.error_class}`,
     };
   }
   if (edge === "die" || edge === "reap") {
@@ -229,7 +237,7 @@ async function beforeEnd(
   if (!abandon) return { ...unchanged, degraded };
   ctx.log.error(
     { sessionId: id, ticketId: s.ticket_id },
-    "exit without a hand-off: abandoned (§3.2)",
+    "the session exited without writing a hand-off: marked abandoned",
   );
   return {
     ...unchanged,

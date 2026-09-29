@@ -11,6 +11,7 @@ test("error classes are a closed enum", () => {
     "admission_refused",
     "over_budget",
     "spawn_failed",
+    "repo_unreachable",
     "runner_exited_without_terminal",
     "runner_error",
     "timeout",

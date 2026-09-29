@@ -3,17 +3,20 @@ import {
   CreateProjectRequest,
   PatchAgentRequest,
   PatchProjectRequest,
+  RepoCheckRequest,
   type AgentView,
   type ProjectCreated,
   type ProjectPauseState,
   type ProjectSettingsState,
   type ProjectsView,
   type PushTargetsDetected,
+  type RepoCheckView,
 } from "@bayon/proto";
 import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -35,6 +38,14 @@ export class ProjectsController {
     this.#projects = projects;
   }
 
+  /**
+   * Both routes that reach a remote share one per-bearer limit (H1): past it, 429
+   * in plain words, and nothing is asked of the supervisor.
+   */
+  #limit(authorization: string | undefined): void {
+    unwrap(this.#projects.admitRemoteCall(authorization));
+  }
+
   /** `GET /projects`: every project, read-only. */
   @Get()
   async list(): Promise<ProjectsView> {
@@ -45,8 +56,26 @@ export class ProjectsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body({ schema: CreateProjectRequest }) body: CreateProjectRequest,
+    @Headers("authorization") authorization: string | undefined,
   ): Promise<ProjectCreated> {
+    this.#limit(authorization);
     return unwrap(await this.#projects.create(body));
+  }
+
+  /**
+   * Whether a https or ssh URL's repo can be read the way the first session's clone will read it
+   *, asked of the supervisor, which alone holds the forge token: found with its default
+   * branch, or why not and what to do, in plain words. 200 either way; a malformed URL or a folder
+   * is 400. Writes nothing but the `repo.check` command row.
+   */
+  @Post("repo-check")
+  @HttpCode(HttpStatus.OK)
+  async checkRepo(
+    @Body({ schema: RepoCheckRequest }) body: RepoCheckRequest,
+    @Headers("authorization") authorization: string | undefined,
+  ): Promise<RepoCheckView> {
+    this.#limit(authorization);
+    return unwrap(await this.#projects.checkRepo(body));
   }
 
   /** `POST /projects/:id/agents`: 201 with the new builder, reviewer or orchestrator

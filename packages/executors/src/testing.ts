@@ -12,3 +12,7 @@ export {
   installFakeDocker,
   type FakeDocker,
 } from "./container/fake-docker.js";
+export {
+  installFakeSecurity,
+  type FakeSecurity,
+} from "./testing/fake-security.js";

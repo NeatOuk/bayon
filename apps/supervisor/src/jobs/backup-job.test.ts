@@ -133,10 +133,11 @@ test("the same key from the Keychain logs no override warning; the environment w
   expect(envWarnings()).toHaveLength(before + 1);
 });
 
-test("a missing key: a failed row naming the fix, no new file, no plaintext, no retention", async () => {
+test("a key gone after a good backup: a failed row naming the fix, no new file, no retention", async () => {
   const before = backupFiles();
-  const { backup, retention } = await night({});
+  const { backup, retention, notSetUp } = await night({});
   expect(backup.ok).toBe(false);
+  expect(notSetUp).toBeUndefined();
   expect(retention).toBeNull();
   expect(unwrap(await getLastBackup(t.db))).toMatchObject({
     outcome: "failed",
@@ -144,6 +145,73 @@ test("a missing key: a failed row naming the fix, no new file, no plaintext, no 
     error: expect.stringMatching(/FRM_BACKUP_KEY.*frm backup init-key/),
   });
   expect(backupFiles()).toEqual(before);
+});
+
+test("a Keychain that could not be read is a failed attempt, never 'not set up'", async () => {
+  const fresh = unwrap(await tempDb(clock));
+  try {
+    const locked = {
+      get: async () => ({
+        ok: false as const,
+        error: {
+          class: "internal" as const,
+          message: "the Keychain did not answer for FRM_BACKUP_KEY",
+          retryable: true,
+        },
+      }),
+    };
+    const result = await runBackupJob(
+      {
+        db: fresh.db,
+        clock,
+        log,
+        home,
+        secrets: { env: envSecrets({}), host: locked, hostSource: "keychain" },
+      },
+      DEFAULT_BACKUP_SETTINGS,
+    );
+    expect(result.notSetUp).toBeUndefined();
+    expect(unwrap(await getLastBackup(fresh.db))).toMatchObject({
+      outcome: "failed",
+      error: expect.stringContaining("did not answer"),
+    });
+  } finally {
+    fresh.cleanup();
+  }
+});
+
+test("no key and no good backup ever: not set up — no row, no file, no error line", async () => {
+  const fresh = unwrap(await tempDb(clock));
+  const freshHome = mkdtempSync(join(tmpdir(), "bayon-backup-fresh-"));
+  try {
+    const linesBefore = logs.length;
+    const result = await runBackupJob(
+      {
+        db: fresh.db,
+        clock,
+        log,
+        home: freshHome,
+        secrets: {
+          env: envSecrets({}),
+          host: envSecrets({}),
+          hostSource: "keychain",
+        },
+      },
+      DEFAULT_BACKUP_SETTINGS,
+    );
+    expect(result.backup.ok).toBe(false);
+    expect(result.notSetUp).toBe(true);
+    expect(result.retention).toBeNull();
+    expect(unwrap(await getLastBackup(fresh.db))).toBeNull();
+    expect(existsSync(backupsDir(freshHome))).toBe(false);
+    const levels = logs
+      .slice(linesBefore)
+      .map((line) => (JSON.parse(line) as { level: number }).level);
+    expect(levels.filter((level) => level >= 50)).toEqual([]);
+  } finally {
+    fresh.cleanup();
+    rmSync(freshHome, { recursive: true, force: true });
+  }
 });
 
 test("a malformed key is refused without echoing it", async () => {

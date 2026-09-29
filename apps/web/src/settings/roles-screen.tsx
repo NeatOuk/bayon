@@ -1,4 +1,4 @@
-import { BindingRole } from "@bayon/core";
+import { BindingRole, isAgentRunner } from "@bayon/core";
 import type {
   CertificationView,
   RoleBindingView,
@@ -94,7 +94,10 @@ function RolesTable({
   /** The executor ids a binding may name (GET /executors). */
   readonly executors: readonly string[];
 }) {
-  const runnerIds = (runners ?? []).map((runner) => runner.id);
+  // A role runs an agent: the supervisor's job runners are never offered.
+  const runnerIds = (runners ?? [])
+    .filter(isAgentRunner)
+    .map((runner) => runner.id);
   return (
     <Table aria-label="role bindings">
       <TableHeader>

@@ -58,6 +58,8 @@ export type GitRunner = (
   cwd: string,
   args: readonly string[],
   timeoutMs: number,
+  /** Extra environment, e.g. GIT_CEILING_DIRECTORIES; never overrides the floor or PATH/HOME. */
+  env?: Readonly<Record<string, string>>,
 ) => Promise<GitRun>;
 
 const MIB = 1024 * 1024;
@@ -72,7 +74,7 @@ const SHA = /^[0-9a-f]{7,64}$/;
  */
 export const runGit =
   (binary = "git", maxBuffer = MAX_BUFFER): GitRunner =>
-  (cwd, args, timeoutMs) =>
+  (cwd, args, timeoutMs, extraEnv = {}) =>
     new Promise((done) => {
       execFile(
         binary,
@@ -82,6 +84,7 @@ export const runGit =
           maxBuffer,
           encoding: "utf8",
           env: {
+            ...extraEnv,
             ...GIT_ENV_FLOOR,
             PATH: process.env.PATH ?? "",
             HOME: process.env.HOME ?? "",

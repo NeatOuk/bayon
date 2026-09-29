@@ -25,11 +25,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/components/ui/toast";
+import { plainRefusal, technicalRefusal } from "@/tickets/refusal-text";
 import {
   NOTE_LABELS,
   NO_NOTES,
   notesFor,
-  refusalText,
   transitionRequest,
   type NoteField,
   type Notes,
@@ -38,7 +38,7 @@ import {
 // A ticket's moves as the operator makes them (moved it here from ticket-actions.tsx): one
 // flow, so the Actions panel and the header's next-step line take a move the same way. Each write is
 // against the version it shows (If-Match, M1 contract 3); a move that needs notes asks for them
-// first; a 422 shows its rule, and a 409 refetches the ticket.
+// first; a 422 says why in plain words (refusal-text.ts), and a 409 refetches the ticket.
 
 /** A write the view makes, each against the version it shows (If-Match, M1 contract 3). */
 type Change =
@@ -137,8 +137,8 @@ function Outcome({
   readonly ticketKey: string;
 }) {
   if (error === null) return null;
-  const alert = (text: string) => (
-    <p role="alert" className="text-sm text-destructive">
+  const alert = (text: string, title?: string) => (
+    <p role="alert" className="text-sm text-destructive" title={title}>
       {text}
     </p>
   );
@@ -158,7 +158,10 @@ function Outcome({
   const rule = wire.rule;
   return rule === undefined
     ? alert(error.message)
-    : alert(refusalText({ rule, reason: wire.reason, detail: wire.detail }));
+    : alert(
+        plainRefusal({ rule, reason: wire.reason, detail: wire.detail }),
+        technicalRefusal({ rule, reason: wire.reason, detail: wire.detail }),
+      );
 }
 
 function NotesDialog({

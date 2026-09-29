@@ -1,6 +1,8 @@
 // The adapter on its stand-in, through the real turn host and the real local executor: what spawn
 // refuses before any process starts, the version pin, adopt, and the run lifecycle. Waits are on
-// events and exits, each with a deadline; nothing sleeps.
+// events and exits, each with a deadline; nothing sleeps. The adapter's clock is a FakeClock no test
+// advances: its graces (a cancel's answer, each step of a graceful stop) never run out on the wall
+// clock under load, so every wait ends on the real event or on its test's deadline.
 import {
   existsSync,
   mkdirSync,
@@ -11,7 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { REVIEW_OUTPUT_JSON_SCHEMA } from "@bayon/core";
+import { FakeClock, REVIEW_OUTPUT_JSON_SCHEMA } from "@bayon/core";
 import { LocalExecutor, SESSION_GIT_ENV, SlotCounter } from "@bayon/executors";
 import { afterEach, describe, expect, test } from "vitest";
 import type { RunnerAdapter, SessionHandle, SpawnSpec } from "../../adapter.js";
@@ -27,7 +29,9 @@ const decoder = new TextDecoder();
 const stub = (...extra: string[]) =>
   createOpencodeAdapter({
     bin: [process.execPath, STUB_OPENCODE, ...extra],
-    graceMs: 300,
+    clock: new FakeClock(),
+    // Also the host's own grace, on its wall clock: generous, since each of its waits ends early.
+    graceMs: WAIT_MS,
     ...(process.platform === "darwin" ? {} : { unsandboxed: true }),
   });
 
@@ -163,7 +167,8 @@ describe("refused before any process starts", () => {
   });
 });
 
-describe("a session", () => {
+// Past the per-wait deadlines (WAIT_MS): a spawn, a turn and a cancel under load each get their own.
+describe("a session", { timeout: 2 * WAIT_MS }, () => {
   test("spawn resolves with opencode's session id; two turns on one process", async () => {
     const adapter = stub();
     const h = await spawned(adapter, specOf());
@@ -235,7 +240,7 @@ describe("a session", () => {
     const adapter = stub();
     const spec = specOf();
     const h = await spawned(adapter, spec);
-    await adapter.stop(h, "graceful");
+    await within(adapter.stop(h, "graceful"), "graceful stop");
     expect(await within(h.exited, "exit")).toMatchObject({ code: 0 });
     const adopted = await within(
       adapter.adopt(

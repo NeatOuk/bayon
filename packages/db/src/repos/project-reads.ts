@@ -1,14 +1,22 @@
 // `GET /projects`: a project is a workspace with its repos and agents, and the count of
-// its tickets still open. One read, four queries, assembled per workspace.
+// its tickets still open. One read, four queries, assembled per workspace, and whether a builder
+// and a reviewer can take its work (two small reads per workspace).
 import { TICKET_STATUSES, isTerminal } from "@bayon/core";
 import type { Db, R } from "../connection.js";
 import { all, qb, read } from "../connection.js";
 import type { AgentRow, WorkspaceRow } from "../schema.js";
 import type { WorkspaceRepo } from "./config.js";
+import { couldStaff, poolHasEnabled } from "./staff-pool.js";
 
 export type ProjectAgent = Pick<
   AgentRow,
-  "id" | "name" | "kind" | "runner_id" | "enabled" | "max_concurrency"
+  | "id"
+  | "name"
+  | "kind"
+  | "runner_id"
+  | "enabled"
+  | "max_concurrency"
+  | "mission_id"
 >;
 
 export interface ProjectListing {
@@ -18,6 +26,10 @@ export interface ProjectListing {
   readonly agents: readonly ProjectAgent[];
   /** Tickets not done or rejected. */
   readonly openTickets: number;
+  /** A builder staffing could pick for its tickets: staff-pool.ts couldStaff. */
+  readonly hasBuilder: boolean;
+  /** An enabled reviewer in its pool, its own or the fleet's while it has none (agentPool). */
+  readonly hasReviewer: boolean;
 }
 
 const TERMINAL = TICKET_STATUSES.filter(isTerminal);
@@ -54,6 +66,7 @@ export function listProjects(db: Db): R<ProjectListing[]> {
           "runner_id",
           "enabled",
           "max_concurrency",
+          "mission_id",
           "workspace_id",
         ])
         .where("workspace_id", "is not", null)
@@ -75,6 +88,8 @@ export function listProjects(db: Db): R<ProjectListing[]> {
       repos: repos.filter((r) => r.workspace_id === workspace.id),
       agents: agents.filter((a) => a.workspace_id === workspace.id),
       openTickets: open.find((o) => o.workspace_id === workspace.id)?.n ?? 0,
+      hasBuilder: couldStaff(ix, "builder", workspace.id),
+      hasReviewer: poolHasEnabled(ix, "reviewer", workspace.id),
     }));
   });
 }

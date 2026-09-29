@@ -75,7 +75,7 @@ function gateForRepo(
   }
   return GateEvidence.safeParse(latest.evidence).success
     ? null
-    : fail("missing_evidence", `${where} passed without evidence (§10.3)`);
+    : fail("missing_evidence", `${where} passed without evidence`);
 }
 
 /**
@@ -277,7 +277,7 @@ function enteredFromHumanQa(i: LawInput): Failure | null {
     ? null
     : fail(
         "not_from_human_qa",
-        `rework was entered from ${prior ?? "unknown"}; only a failed human QA returns to building (§10.4)`,
+        `rework was entered from ${prior ?? "unknown"}; only a failed human QA returns to building`,
       );
 }
 
@@ -317,7 +317,7 @@ export function checkRequirement(
       // split endpoint to send anyone to.
       return fail(
         "illegal_transition",
-        "splitting a ticket is not implemented (§7.5 is deferred): the watchdog raises a human request instead",
+        "splitting a ticket is not built yet: the watchdog asks the operator instead",
       );
   }
 }

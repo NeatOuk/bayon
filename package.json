@@ -12,7 +12,8 @@
     "typecheck": "tsc -b",
     "lint": "eslint . && prettier --check .",
     "test": "vitest run --coverage",
-    "frm": "node tools/frm/dist/main.js"
+    "frm": "node tools/frm/dist/main.js",
+    "start": "node tools/frm/dist/main.js start"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

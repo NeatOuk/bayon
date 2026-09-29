@@ -51,7 +51,7 @@ test("a refused stop shows the server's error and keeps the dialog", async () =>
   await user.click(screen.getByRole("button", { name: "Stop" }));
   await user.click(screen.getByRole("button", { name: "Stop (graceful)" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "conflict: the session already ended",
+    "the session already ended",
   );
   expect(screen.getByRole("alertdialog")).toBeTruthy();
 });

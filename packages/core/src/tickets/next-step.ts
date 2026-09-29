@@ -21,6 +21,7 @@ import type {
   MergeFacts,
   TransitionOption,
 } from "../laws/types.js";
+import { STAFFABLE_STATUSES } from "../staffing.js";
 import type { SessionState } from "../states.js";
 import {
   DRIFT_LEAD,
@@ -54,10 +55,12 @@ export type WaitingOn = z.infer<typeof WaitingOn>;
 /**
  * What the GUI turns the action into. `transition` targets a status, `rerun_gate` a gate id,
  * `unpause` `fleet` or `project`, `configure` `runners` or `settings`, `answer` `questions` or
- * `proposal`; `none` is a hint with no button.
+ * `proposal`; `start` prioritises (from backlog) and staffs a builder through the operator's own
+ * doors; `none` is a hint with no button.
  */
 export const NextStepActionKind = z.enum([
   "answer",
+  "start",
   "transition",
   "rerun_gate",
   "unpause",
@@ -93,6 +96,20 @@ export interface NextStepHolder {
   readonly agent: string;
   readonly state: LiveSessionState;
   readonly turns: number;
+  /** Its runner is a script (`runners.kind`): it does no model work, so idle is where it stops. */
+  readonly scripted: boolean;
+}
+
+/** A live reviewer session on the ticket. */
+export interface NextStepReviewing {
+  /** `agents.name`. */
+  readonly agent: string;
+}
+
+/** A `session.spawn` queued for the ticket that has no session row yet. */
+export interface NextStepStarting {
+  /** `agents.name` of the agent it will run on. */
+  readonly agent: string;
 }
 
 export interface NextStepTicket extends LawTicket {
@@ -112,6 +129,13 @@ export interface NextStepFacts {
   /** Gates with a live reviewer session (`sessions.gate_id`). */
   readonly liveGateIds: readonly string[];
   readonly holder: NextStepHolder | null;
+  /** The spawn staffing queued, before its session row exists: the window after "Staff". */
+  readonly starting: NextStepStarting | null;
+  /**
+   * A live gate reviewer on the ticket. Never its holder, but staffing refuses while
+   * one is live (admit counts every live session of the ticket), so nothing offers to staff it.
+   */
+  readonly reviewing: NextStepReviewing | null;
   /** An unaccepted hand-off (v_needs_attention's handoff_pending). */
   readonly handoffPending: boolean;
   /** The operator's options, from core's allowedTransitions: what the Actions panel shows. */
@@ -121,6 +145,8 @@ export interface NextStepFacts {
   readonly pause: { readonly fleet: boolean; readonly project: boolean };
   /** An enabled orchestrator covers the ticket: its project's, or one of the fleet's. */
   readonly hasOrchestrator: boolean;
+  /** An enabled builder in the ticket's agent pool (staffing's own agentPool rule). */
+  readonly hasBuilder: boolean;
   /**
    * Whether the ticket's project runs a QA gate: `workspaces.qa_mode` is `command` or `ci` — the
    * laws' own `qa_configured`. False: `pass_harness` is the operator's note.
@@ -181,6 +207,23 @@ const STAFF_HINT: Action = {
   kind: "none",
   label: "Staff it from the Actions panel",
 };
+const START: Action = { kind: "start", label: "Start work" };
+const STAFFABLE: ReadonlySet<string> = new Set(STAFFABLE_STATUSES);
+
+/**
+ * "Start work", when a builder can take the ticket: from backlog while the laws let the
+ * operator prioritise it, or from a status staffing takes. The GUI calls the operator's own doors.
+ */
+function startAction(f: NextStepFacts): Action | undefined {
+  if (!f.hasBuilder || f.reviewing !== null) return undefined;
+  const { status } = f.ticket;
+  const can =
+    status === "backlog"
+      ? move(f, "prioritize", START.label) !== undefined
+      : STAFFABLE.has(status);
+  return can ? START : undefined;
+}
+
 const CONFIGURE_REVIEWER: Action = {
   kind: "configure",
   label: "Set up a reviewer",
@@ -210,15 +253,22 @@ function unlessPaused(f: NextStepFacts, next: NextStep): NextStep {
 
 /** Nothing holds the ticket: the orchestrator staffs it, or the operator when none covers it. */
 function staffing(f: NextStepFacts, lead: string, mine?: Action): NextStep {
+  // Staffed already: its spawn is queued and its session row not written yet.
+  if (f.starting !== null) {
+    return step("agent", SAY.startingFor(f.starting.agent));
+  }
+  // Staffing refuses while a reviewer's session on it is live: that is the wait, not staffing.
+  if (f.reviewing !== null) return step("reviewer", SAY.reviewerFinishing);
   const who = f.handoffPending ? "a successor" : "it";
+  const start = startAction(f);
   if (!f.hasOrchestrator) {
     return step(
       "you",
       `${lead}. ${SAY.staffYourself(who)}`,
-      mine ?? STAFF_HINT,
+      mine ?? start ?? STAFF_HINT,
     );
   }
-  return unlessPaused(f, step("orchestrator", SAY.staff(lead, who)));
+  return unlessPaused(f, step("orchestrator", SAY.staff(lead, who), start));
 }
 
 const starting = (h: NextStepHolder): NextStep =>
@@ -233,7 +283,12 @@ const HOLDING: Readonly<
   running: (h, verb) =>
     step("agent", `${h.agent} is ${verb} (turn ${h.turns})`),
   idle: (h, verb) =>
-    step("agent", `${h.agent} is ${verb} (turn ${h.turns}, between turns)`),
+    step(
+      "agent",
+      h.scripted
+        ? SAY.scriptIdle(h.agent, h.turns)
+        : `${h.agent} is ${verb} (turn ${h.turns}, between turns)`,
+    ),
   awaiting_approval: (h) =>
     step("you", `${h.agent} waits for your approval of a tool call`, {
       kind: "none",
@@ -542,11 +597,11 @@ function working(f: NextStepFacts, status: WorkStatus): NextStep {
   switch (status) {
     case "backlog":
       return f.hasOrchestrator
-        ? unlessPaused(f, step("orchestrator", SAY.prioritise))
+        ? unlessPaused(f, step("orchestrator", SAY.prioritise, startAction(f)))
         : step(
             "you",
             SAY.prioritiseYourself,
-            move(f, "prioritize", "Prioritise"),
+            startAction(f) ?? move(f, "prioritize", "Prioritise"),
           );
     case "prioritized":
       return worker(f, "starting", "Prioritised");

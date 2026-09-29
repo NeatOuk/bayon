@@ -2,10 +2,12 @@ import { EventEmitter } from "node:events";
 import type { ProxyOptions } from "vite";
 import { describe, expect, test, vi } from "vitest";
 import { apiProxy, extraOrigins, mayUseBearer } from "./dev-proxy.js";
+import { LOCAL_BROWSER_HEADER } from "./server/local-browser.js";
 
 const ORIGINS = new Set(["http://localhost:5173"]);
 const TARGET = "http://127.0.0.1:3010";
 const TOKEN = "t".repeat(32);
+const KEY = "5a".repeat(32);
 
 describe("mayUseBearer", () => {
   test.each([
@@ -86,12 +88,27 @@ function forward(
   options: ProxyOptions,
   event: "proxyReq" | "proxyReqWs",
   headers: Record<string, string>,
+  remoteAddress = "192.0.2.7",
+) {
+  return forwardWith(options, event, headers, remoteAddress).setHeader;
+}
+
+function forwardWith(
+  options: ProxyOptions,
+  event: "proxyReq" | "proxyReqWs",
+  headers: Record<string, string>,
+  remoteAddress: string,
 ) {
   const proxy = new EventEmitter();
   options.configure?.(proxy as unknown as ProxyServer, options);
   const setHeader = vi.fn();
-  proxy.emit(event, { setHeader }, { headers });
-  return setHeader;
+  const removeHeader = vi.fn();
+  proxy.emit(
+    event,
+    { setHeader, removeHeader },
+    { headers, socket: { remoteAddress } },
+  );
+  return { setHeader, removeHeader };
 }
 
 describe("apiProxy", () => {
@@ -99,6 +116,7 @@ describe("apiProxy", () => {
     target: TARGET,
     token: TOKEN,
     allowedOrigins: ORIGINS,
+    localKey: () => KEY,
   });
 
   test("forwards /api over HTTP and /ws, /ws/pty as WebSocket upgrades", () => {
@@ -132,7 +150,84 @@ describe("apiProxy", () => {
       target: TARGET,
       token: undefined,
       allowedOrigins: ORIGINS,
+      localKey: () => KEY,
     });
     expect(forward(bare["/api"], "proxyReq", {})).not.toHaveBeenCalled();
+  });
+
+  // §14 amendment: the proxy alone says whether the browser is on this host.
+  const OWN = {
+    origin: "http://localhost:5173",
+    "sec-fetch-site": "same-origin",
+  };
+
+  test("a browser on this host gets the local header beside the bearer", () => {
+    const { setHeader } = forwardWith(
+      proxies["/api"],
+      "proxyReq",
+      OWN,
+      "127.0.0.1",
+    );
+    expect(setHeader).toHaveBeenCalledWith(LOCAL_BROWSER_HEADER, KEY);
+  });
+
+  test("with no key readable, no browser is local", () => {
+    const keyless = apiProxy({
+      target: TARGET,
+      token: TOKEN,
+      allowedOrigins: ORIGINS,
+      localKey: () => null,
+    });
+    const { setHeader } = forwardWith(
+      keyless["/api"],
+      "proxyReq",
+      OWN,
+      "127.0.0.1",
+    );
+    expect(setHeader).toHaveBeenCalledWith("authorization", `Bearer ${TOKEN}`);
+    expect(setHeader).not.toHaveBeenCalledWith(
+      LOCAL_BROWSER_HEADER,
+      expect.anything(),
+    );
+  });
+
+  test("another localhost port (same-site) gets neither the bearer nor the local header", () => {
+    const { setHeader, removeHeader } = forwardWith(
+      proxies["/api"],
+      "proxyReq",
+      { origin: "http://localhost:3000", "sec-fetch-site": "same-site" },
+      "127.0.0.1",
+    );
+    expect(removeHeader).toHaveBeenCalledWith(LOCAL_BROWSER_HEADER);
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  test("a LAN browser does not, and a copy it sent is removed", () => {
+    const { setHeader, removeHeader } = forwardWith(
+      proxies["/api"],
+      "proxyReq",
+      { ...OWN, [LOCAL_BROWSER_HEADER]: "1" },
+      "192.0.2.7",
+    );
+    expect(removeHeader).toHaveBeenCalledWith(LOCAL_BROWSER_HEADER);
+    expect(setHeader).not.toHaveBeenCalledWith(
+      LOCAL_BROWSER_HEADER,
+      expect.anything(),
+    );
+  });
+
+  test("a copy is removed even from a request that gets no bearer", () => {
+    const { setHeader, removeHeader } = forwardWith(
+      proxies["/ws"],
+      "proxyReqWs",
+      {
+        origin: "https://evil.example",
+        "sec-fetch-site": "cross-site",
+        [LOCAL_BROWSER_HEADER]: "1",
+      },
+      "127.0.0.1",
+    );
+    expect(removeHeader).toHaveBeenCalledWith(LOCAL_BROWSER_HEADER);
+    expect(setHeader).not.toHaveBeenCalled();
   });
 });

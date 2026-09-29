@@ -7,9 +7,14 @@ import http, {
   type ServerResponse,
 } from "node:http";
 import type { Duplex } from "node:stream";
+import { LOCAL_BROWSER_HEADER } from "./local-browser.js";
 import type { WsPair } from "./sessions.js";
 
-/** Request headers that never go upstream: hop-by-hop, and the browser's own credentials. */
+/**
+ * Request headers that never go upstream: hop-by-hop, the browser's own credentials, and the
+ * "browser on the host" signal (§14 amendment) — the edge never vouches for that, so a
+ * deployed install is never local, and a browser's own copy must not reach the API.
+ */
 const DROP_UP = new Set([
   "connection",
   "keep-alive",
@@ -23,6 +28,7 @@ const DROP_UP = new Set([
   "host",
   "cookie",
   "authorization",
+  LOCAL_BROWSER_HEADER,
 ]);
 
 /** Response headers that never go back: hop-by-hop, and any cookie the API might set. */

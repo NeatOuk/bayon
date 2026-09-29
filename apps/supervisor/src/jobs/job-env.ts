@@ -158,7 +158,7 @@ export function jobHome(
     return err(
       frmError(
         "validation",
-        `this job cannot run repository commands: its environment sets no ${missing.join(", ")}, so there is no session-private home to confine them to (§9.8)`,
+        `this job cannot run repository commands: its environment sets no ${missing.join(", ")}, so there is no session-private home to confine them to`,
       ),
     );
   }
@@ -167,7 +167,7 @@ export function jobHome(
     return err(
       frmError(
         "validation",
-        `this job cannot run repository commands: its HOME is not session ${sessionId}'s own directory, so the commands would run with a home they do not own (§9.8, §14)`,
+        `this job cannot run repository commands: its HOME is not session ${sessionId}'s own directory, so the commands would run with a home they do not own`,
       ),
     );
   }

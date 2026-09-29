@@ -599,7 +599,7 @@ describe("the parity_check gate", { timeout: 60_000 }, () => {
     const g = await decided(w, "g-parity");
     expect(g.state).toBe("failed");
     expect(stored(g)).toMatchObject({ reason: "no_reviewer" });
-    expect(String(stored(g)["detail"])).toContain("kind='util'");
+    expect(String(stored(g)["detail"])).toContain("none is enabled");
     expect(unwrap(await listGateSessions(w.db, ["g-parity"]))).toEqual([]);
   });
 

@@ -289,7 +289,7 @@ test("rules 2 and 3 walk from the pinned commit, not from the base (H1)", async 
     [...g.findings, ...parityFindings(g.facts)].map((f) => f.summary),
   ).toEqual([
     '.gitmodules names "libs/moved", which no repo of this workspace declares',
-    'repo mid declares submodule_path "libs/mid", which .gitmodules does not name',
+    'repo mid is declared as the submodule at "libs/mid", which .gitmodules does not name',
   ]);
   expect(g.facts.worktrees).toEqual([
     { repoId: "super", sha: worked, which: "head", inMirror: true },

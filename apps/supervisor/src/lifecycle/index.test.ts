@@ -69,7 +69,7 @@ async function build(settings: Readonly<Record<string, number>> = {}) {
   return { lifecycle, registered };
 }
 
-test("lifecycleFactory registers session.spawn, session.interrupt, session.stop, session.handoff, executor.health, session.attach and session.detach, then boots", async () => {
+test("lifecycleFactory registers session.spawn, session.interrupt, session.stop, session.handoff, executor.health, session.attach, session.detach and repo.check, then boots", async () => {
   const { lifecycle, registered } = await build();
   expect(registered).toEqual([
     "session.spawn",
@@ -79,6 +79,7 @@ test("lifecycleFactory registers session.spawn, session.interrupt, session.stop,
     "executor.health",
     "session.attach",
     "session.detach",
+    "repo.check",
   ]);
   expect(await lifecycle.boot()).toEqual(ok(undefined));
   await lifecycle.shutdown();

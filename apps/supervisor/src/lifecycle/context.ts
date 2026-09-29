@@ -21,6 +21,7 @@ import type { CommandRequeue } from "../commands/claimer.js";
 import type { ReleaseCandidates } from "../watchdog/candidates.js";
 import type { Watchdog } from "../watchdog/watchdog.js";
 import type { Ingest } from "./ports.js";
+import type { RemotePolicy } from "./remote-policy.js";
 import type { SecretStore } from "./secrets.js";
 import type { KeyedQueue } from "./session-queue.js";
 import type { LifecycleSettings } from "./settings.js";
@@ -56,6 +57,13 @@ export interface LifecycleDeps {
   readonly adapters: ReadonlyMap<string, RunnerAdapter>;
   readonly ingest: Ingest;
   readonly secrets: SecretStore;
+  /**
+   * What a repo URL's host resolves to, for the remote policy. Default: DNS. Tests pass
+   * one that touches no network.
+   */
+  readonly resolveHost?: (host: string) => Promise<readonly string[]>;
+  /** The transports a remote read may use. Default: https and ssh; tests add `file`. */
+  readonly remoteProtocols?: readonly string[];
   /** PATH for runner and git processes. Default: the supervisor's own. */
   readonly path?: string;
   /** The API's MCP endpoint a session's runner calls. */
@@ -224,6 +232,8 @@ export interface PtyChannelEntry {
 
 export interface Ctx extends LifecycleDeps {
   readonly settings: LifecycleSettings;
+  /** What a remote read (the repo check, a first clone) may reach. */
+  readonly remote: RemotePolicy;
   readonly path: string;
   readonly mcpUrl: string;
   readonly mcpReachable: (url: string) => Promise<boolean>;

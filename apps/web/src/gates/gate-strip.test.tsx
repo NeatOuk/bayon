@@ -361,7 +361,7 @@ test("a 409 on rerun says the gate moved on and refetches the ticket", async () 
   );
   expect(
     await screen.findByText(
-      /code_review #1 changed before your write arrived \(conflict: gate g1 is waived, not failed\)/,
+      /code_review #1 changed before your write arrived \(gate g1 is waived, not failed\)/,
     ),
   ).toBeTruthy();
   expect(
@@ -390,7 +390,7 @@ test("a rerun the laws refuse (422) says why beside the button", async () => {
   const code = await card("code_review");
   await user.click(within(code).getByRole("button", { name: "Rerun" }));
   expect((await within(code).findByRole("alert")).textContent).toBe(
-    "law_refused: the ticket is not in code_review",
+    "the ticket is not in code_review",
   );
 });
 

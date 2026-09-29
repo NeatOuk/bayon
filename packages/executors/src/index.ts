@@ -29,6 +29,9 @@ export { SlotCounter, tryAcquireAll, type Slot } from "./slots.js";
 export {
   GIT_ENV_FLOOR,
   GIT_ENV_FLOOR_SH,
+  REMOTE_GIT_ENV,
+  REMOTE_PROTOCOLS,
+  remoteProtocolFlags,
   GIT_STDOUT_CAP,
   GIT_TOKEN_ENV,
   GIT_TOKEN_HOST_ENV,
@@ -50,6 +53,7 @@ export {
   firstOf,
   getSourced,
   hostSecrets,
+  isSecretMissing,
   keychainSecrets,
   putKeychainSecret,
   type HostSecrets,
@@ -62,11 +66,40 @@ export {
 } from "./secrets.js";
 // Which install's Keychain service a process reads.
 export {
+  GUARDED_HOME,
+  NO_DEFAULT_HOME_ENV,
   OWNER_KEYCHAIN_SERVICE,
+  defaultHome,
   installHome,
   keychainScope,
   type KeychainScope,
 } from "./keychain-scope.js";
+// Where an install listens, its bearer, and where its sockets go (..257).
+export {
+  API_TOKEN_NAME,
+  DEFAULT_API_HOST,
+  DEFAULT_PORTS,
+  INSTALL_FILE,
+  InstallFile,
+  LONGEST_SOCKET_NAME_BYTES,
+  SOCKET_PATH_MAX_BYTES,
+  apiUrl,
+  darwinUserTempDir,
+  ensureSocketDir,
+  installPorts,
+  mcpUrl,
+  portFree,
+  readApiToken,
+  readInstallFile,
+  socketDir,
+  socketsFit,
+  verifySocketDir,
+  verifySocketFile,
+  writeInstallFile,
+  type ApiTokenOptions,
+  type InstallPorts,
+  type SocketDirOptions,
+} from "./install-entry.js";
 // A login the operator's own CLI owns and rotates, read and returned in place with consent (§14).
 export {
   MAX_LOGIN_BYTES,
@@ -76,6 +109,8 @@ export {
 } from "./live-login.js";
 export { LocalExecutor, type LocalExecutorOptions } from "./local/local.js";
 export { readProc, type ProcInfo } from "./local/proc-info.js";
+// Who holds a home's supervisor lock, judged without touching it.
+export { LockOwner, lockHolder, type LockHolder } from "./lock-holder.js";
 // The two tags a session's environment carries, by which listOwned finds it.
 export { HOME_TAG_ENV, SESSION_ID_ENV } from "./local/proc-scan.js";
 export {

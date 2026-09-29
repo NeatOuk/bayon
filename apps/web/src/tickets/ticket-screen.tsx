@@ -26,10 +26,15 @@ import { TicketActions } from "@/tickets/ticket-actions";
 import { TicketQuestions } from "@/tickets/ticket-questions";
 import { reviewRoundsLabel } from "@/tickets/ticket-model";
 import { EconomicsPanel, EventsPanel } from "@/tickets/ticket-sections";
+import { useTicketSessionsRefresh } from "@/tickets/use-ticket-sessions-refresh";
 import { useTicketsFeed } from "@/tickets/use-tickets-feed";
 
+/** How often the page re-reads a ticket whose staffed session is still starting. */
+export const QUEUED_POLL_MS = 3_000;
+
 /**
- * §12.3 TICKET: `#/tickets/:num`, live from the `tickets` and `gates` topics. An IDE tab
+ * §12.3 TICKET: `#/tickets/:num`, live from the `tickets` and `gates` topics and its sessions'
+ * rows in the fleet. An IDE tab
  * passes a null `backHref`: its tab strip is the way back.
  */
 export function TicketScreen({
@@ -41,7 +46,14 @@ export function TicketScreen({
 }) {
   useTicketsFeed();
   useGatesFeed();
-  const detail = useQuery(ticketQuery(num));
+  useTicketSessionsRefresh(num);
+  const detail = useQuery({
+    ...ticketQuery(num),
+    // A queued spawn shows "Starting…" until its session row exists; one that fails never makes
+    // a row or a fleet change, so the page asks again while it waits rather than wait forever.
+    refetchInterval: (query) =>
+      query.state.data?.holder?.kind === "queued" ? QUEUED_POLL_MS : false,
+  });
   return (
     <PageContainer className="@container">
       {backHref !== null && (
@@ -55,7 +67,7 @@ export function TicketScreen({
           label={
             detail.failureReason === null
               ? "Loading the ticket…"
-              : `Loading the ticket… retrying after ${detail.failureReason.message}`
+              : `Loading the ticket… trying again. ${detail.failureReason.message}`
           }
         />
       )}
@@ -144,6 +156,8 @@ function TicketView({ detail }: { readonly detail: TicketDetail }) {
           <TicketActions
             ticket={ticket}
             transitions={detail.transitions}
+            holder={detail.holder}
+            reviewing={detail.reviewing}
             suggested={
               detail.next_step.action?.kind === "transition"
                 ? (detail.transitions.find(

@@ -12,9 +12,16 @@
     "vite.config.ts",
     "dev-proxy.ts",
     "dev-proxy.test.ts",
+    "dev-config.ts",
+    "dev-config.test.ts",
     "colours.test.ts",
     "theme-contrast.ts"
   ],
-  // dev-proxy.ts imports the origin guard it shares with the production edge server.
-  "references": [{ "path": "./tsconfig.server.json" }]
+  // dev-proxy.ts imports the origin guard it shares with the production edge server; dev-config.ts
+  // the install's ports and bearer.
+  "references": [
+    { "path": "./tsconfig.server.json" },
+    { "path": "../../packages/core" },
+    { "path": "../../packages/executors" }
+  ]
 }

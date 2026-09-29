@@ -24,17 +24,33 @@ const SERVICE_HASH_HEX = 12;
 export const defaultHome = (): string =>
   join(userInfo().homedir, DEFAULT_HOME_DIR);
 
+type Env = Readonly<Record<string, string | undefined>>;
+
+/**
+ * Set, the default home is never used (vitest.setup.ts sets it for every test worker and every
+ * child a test spawns; `frm smoke` for its children): a process that names no home resolves to
+ * GUARDED_HOME instead, so no test reads ~/.foreman's install file or its Keychain service.
+ */
+export const NO_DEFAULT_HOME_ENV = "FRM_NO_DEFAULT_HOME";
+
+/** Where a guarded process with no home resolves: a path that cannot exist, so nothing is read. */
+export const GUARDED_HOME = "/nonexistent/frm-no-default-home";
+
+const isSet = (value: string | undefined): boolean =>
+  value !== undefined && value !== "";
+
 /**
  * The install a process belongs to: `FRM_HOME`; else the directory of `FRM_DB` (the API runs on
- * `FRM_DB` alone, and `$FRM_HOME/foreman.db` is the one layout); else the default home.
+ * `FRM_DB` alone, and `$FRM_HOME/foreman.db` is the one layout); else the default home — or, under
+ * FRM_NO_DEFAULT_HOME (in `env` or `guard`, the process's own env by default), GUARDED_HOME.
  */
-export function installHome(
-  env: Readonly<Record<string, string | undefined>>,
-): string {
+export function installHome(env: Env, guard: Env = process.env): string {
   const home = env.FRM_HOME;
   if (home !== undefined && home !== "") return home;
   const db = env.FRM_DB;
   if (db !== undefined && db !== "") return dirname(db);
+  if (isSet(env[NO_DEFAULT_HOME_ENV]) || isSet(guard[NO_DEFAULT_HOME_ENV]))
+    return GUARDED_HOME;
   return defaultHome();
 }
 
@@ -59,10 +75,11 @@ export interface KeychainScope {
  * go through `hostSecrets`, which never passes it.
  */
 export function keychainScope(
-  env: Readonly<Record<string, string | undefined>>,
+  env: Env,
   ownerHome: string = defaultHome(),
+  guard: Env = process.env,
 ): KeychainScope {
-  const home = real(installHome(env));
+  const home = real(installHome(env, guard));
   if (home === real(ownerHome))
     return { service: OWNER_KEYCHAIN_SERVICE, owner: true };
   const hash = createHash("sha256")

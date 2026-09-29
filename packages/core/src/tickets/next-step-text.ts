@@ -27,12 +27,22 @@ export const SAY = {
   parked: (note: string | null) => `Parked: ${note ?? "no note given"}`,
   splitClosable: "Its child tickets are closed: close the split",
   released: "Released: reclaim it to go on",
-  prioritise: "Waiting for the orchestrator to prioritise it",
+  /** Its pulse runs only when other work is due (§9.7's no-op check): a backlog ticket is not. */
+  prioritise:
+    "Waiting for the orchestrator to prioritise it (it wakes only when other work is due)",
   prioritiseYourself: "No orchestrator in this project: prioritise it yourself",
   staffYourself: (who: string) =>
     `No orchestrator in this project: staff ${who} yourself`,
   staff: (lead: string, who: string) =>
     `${lead}: waiting for the orchestrator to staff ${who}`,
+  /** A reviewer's session on it is still live, so staffing refuses until it ends. */
+  reviewerFinishing:
+    "A reviewer is still finishing on this ticket: wait for it",
+  /** Staffed, its spawn queued and no session row yet. */
+  startingFor: (agent: string) => `Starting a session for ${agent}…`,
+  /** An idle holder whose runner is a script: no model work, so idle is its end. */
+  scriptIdle: (agent: string, turns: number) =>
+    `${agent} is idle after turn ${turns}: its runner is a test script that does no real work, so this is where it stops`,
   humanQa: "Waiting on your human QA: pass it, or fail it with a reason",
   qaNote: "QA needs your note (no QA harness configured)",
   /** A CI gate waits for a pull request at the reviewed commit. */

@@ -24,7 +24,6 @@ import {
 } from "../connection.js";
 import { failure } from "../errors.js";
 import type { TicketRow } from "../schema.js";
-import { agentPool, type AgentPool } from "./agent-scope.js";
 import { audited, type AuditEntry } from "./audit.js";
 import { insertCommandIn } from "./commands.js";
 import { dailyCap, todayUsd } from "./fleet-overview.js";
@@ -35,6 +34,7 @@ import {
   type QuestionHold,
 } from "./open-questions.js";
 import { ENDED_STATES } from "./sessions.js";
+import { staffPool, type PoolBinding } from "./staff-pool.js";
 import {
   proposalStep,
   type ProposalFiled,
@@ -119,23 +119,13 @@ const refusal = (reason: StaffRefusalReason, detail: string): Refused => ({
   detail,
 });
 
-interface LiveSession {
-  readonly id: string;
-  readonly agent_id: string;
-  readonly ticket_id: string | null;
-}
 interface QueuedSpawn {
   readonly agent_id: string | null;
   readonly ticket_id: string | null;
 }
-interface Binding {
-  readonly runner_id: string;
-  readonly fallback_runner_id: string | null;
-  readonly executor_id: string | null;
-}
 interface Admitted {
   readonly agent: Candidate;
-  readonly binding: Binding | undefined;
+  readonly binding: PoolBinding | undefined;
 }
 
 /**
@@ -338,15 +328,8 @@ function admit(
   const spent = overBudget(ix);
   if (!spent.ok) return spent;
   if (spent.value !== null) return ok(refusal("over_budget", spent.value));
-  const binding = first(
-    ix,
-    qb
-      .selectFrom("role_bindings")
-      .select(["runner_id", "fallback_runner_id", "executor_id"])
-      .where("role", "=", req.role),
-  );
-  const pool = agentPool(ix, req.role, ticket.workspace_id);
-  const agents = candidates(ix, pool.where, live, queued);
+  const pool = staffPool(ix, req.role, ticket.workspace_id, { live, queued });
+  const { agents, binding } = pool;
   if (req.agent !== undefined) {
     const named = namedAgent(ix, ticket, req.role, req.agent, agents);
     return ok(
@@ -355,8 +338,7 @@ function admit(
         : { agent: named, binding },
     );
   }
-  const scope = pool.own ? "project" : "fleet";
-  const agent = pickAgent(req.role, binding ?? null, agents, scope);
+  const agent = pickAgent(req.role, binding ?? null, agents, pool.scope);
   if (agent === null) {
     const detail = noAgent(req.role, ticket.workspace_id, pool.own, binding);
     return ok(refusal("no_agent", detail));
@@ -429,37 +411,6 @@ function queuedSpawns(ix: Internals): QueuedSpawn[] {
         ),
       ),
   );
-}
-
-/** The ticket's agent pool (agentPool), each with the slots it holds. */
-function candidates(
-  ix: Internals,
-  inPool: AgentPool["where"],
-  live: readonly LiveSession[],
-  queued: readonly QueuedSpawn[],
-): Candidate[] {
-  const agents = all(
-    ix,
-    qb
-      .selectFrom("agents")
-      .select([
-        "id",
-        "kind",
-        "runner_id",
-        "workspace_id",
-        "enabled",
-        "max_concurrency",
-        "created_at",
-      ])
-      .where(inPool),
-  );
-  return agents.map((a) => ({
-    ...a,
-    enabled: a.enabled === 1,
-    busy:
-      live.filter((s) => s.agent_id === a.id).length +
-      queued.filter((s) => s.agent_id === a.id).length,
-  }));
 }
 
 /** prioritized → staffed under the laws (`staff`), in this transaction. */

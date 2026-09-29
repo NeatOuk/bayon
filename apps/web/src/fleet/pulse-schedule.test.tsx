@@ -121,6 +121,7 @@ test("an orchestrator whose project is paused says so; another project's runs on
               runner_id: "runner-a",
               model: null,
               model_id: null,
+              has_mission: false,
               enabled: true,
               max_concurrency: 1,
             },
@@ -185,6 +186,6 @@ test("without a pulse schedule the Fleet still renders, and says why", async () 
   expect(
     within(alert).getByText("The pulse schedule is unavailable"),
   ).toBeTruthy();
-  expect(within(alert).getByText(/^not_found/)).toBeTruthy();
+  expect(within(alert).getByText(/^\/api\/v1\//)).toBeTruthy();
   expect(screen.getByText(/no live sessions/i)).toBeTruthy();
 });

@@ -145,6 +145,8 @@ export {
   projectAgentProfile,
 } from "./project/agent-plan.js";
 export * from "./project/local-roots.js";
+export * from "./project/repo-reach.js";
+export * from "./project/repo-hosts.js";
 export * from "./project/submodule-plan.js";
 export * from "./project/timeline.js";
 export * from "./docs/index.js";
@@ -159,7 +161,7 @@ export {
   openQuestionKey,
 } from "./questions.js";
 export type { QuestionClose } from "./questions.js";
-export { RunnerCaps } from "./runner-caps.js";
+export { isAgentRunner, JOB_RUNNER_KIND, RunnerCaps } from "./runner-caps.js";
 export {
   STAFF_APPROVAL_KIND,
   StaffDecision,

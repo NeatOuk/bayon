@@ -21,11 +21,13 @@ import {
   inboxHref,
   projectHref,
 } from "@/routing";
+import { StartWorkButton } from "@/tickets/start-work";
 import { useTicketMove } from "@/tickets/use-ticket-move";
 
 // A ticket's next step in its header: who it waits on, the server's one sentence why, and
-// the way on — the Inbox's own Answer dialog, the Actions panel's own move, the gate strip's own
-// Rerun, or a link to where a pause lifts or a reviewer is set up. The server says what; this only
+// the way on — the Inbox's own Answer dialog, the Actions panel's own move, Start work (the
+// operator's prioritise and staff doors), the gate strip's own Rerun, or a link to where a
+// pause lifts or a reviewer is set up. The server says what; this only
 // renders it, so the line never disagrees with GET /tickets/:ref/next.
 
 type Action = NonNullable<NextStep["action"]>;
@@ -68,6 +70,8 @@ function StepAction({
           {action.label}
         </Link>
       );
+    case "start":
+      return <StartWorkButton detail={detail} label={action.label} />;
     case "transition": {
       const option = detail.transitions.find(
         (t) => t.to === action.target && t.allowed,

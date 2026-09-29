@@ -95,7 +95,7 @@ test("a failed read says so", async () => {
   expect(
     within(alert).getByText("The review queue is unavailable"),
   ).toBeTruthy();
-  expect(within(alert).getByText("internal: db down")).toBeTruthy();
+  expect(within(alert).getByText("db down")).toBeTruthy();
   expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
 });
 
@@ -170,7 +170,7 @@ test("a waiver needs a reason; a 409 then says the gate was decided first and re
   );
   expect(
     await screen.findByText(
-      /code_review #1 changed before your write arrived \(conflict: gate g1 is passed, not running \| failed\)/,
+      /code_review #1 changed before your write arrived \(gate g1 is passed, not running \| failed\)/,
     ),
   ).toBeTruthy();
   expect(await screen.findByText("Nothing to review")).toBeTruthy();

@@ -186,6 +186,8 @@ export async function startLifecycle(o: {
   readonly adapter: RunnerAdapter;
   readonly ingest?: Ingest;
   readonly secrets?: Readonly<Record<string, string>>;
+  /** What a repo URL's host resolves to; default: nothing, and no network. */
+  readonly resolveHost?: LifecycleDeps["resolveHost"];
   readonly boot?: boolean;
   /** PATH for runner and git processes. Default: the supervisor's own. */
   readonly path?: string;
@@ -255,6 +257,8 @@ export async function startLifecycle(o: {
     adapters: new Map([[o.adapter.id, o.adapter]]),
     ingest,
     secrets: envSecrets(o.secrets ?? {}),
+    // No test resolves a name over the network: the literal host alone is judged.
+    resolveHost: o.resolveHost ?? (() => Promise.resolve([])),
     ...(o.path === undefined ? {} : { path: o.path }),
     ...(o.mcpUrl === undefined ? {} : { mcpUrl: o.mcpUrl }),
     ...(o.loadExecutors === undefined
